@@ -10,9 +10,10 @@ local plugin = require('libs/core/plugin')
 -- attack montages, manually SetLinkedWeapon + SetSweepActive for controller hits.
 ---------------------------------------------------------------------------
 local status = {}
-local EMeleeItemState_Idle = 0
-local EMeleeItemState_StandardAttack = 1
-local cachedWeaponUtils = nil
+local EMeleeItemState = {
+	Idle = 0,
+	StandardAttack = 1,
+}
 
 local function isMeleeItemActor(actor)
 	return uevrUtils.getValid(actor) ~= nil and actor.RequestBeginStandardAttack ~= nil
@@ -50,6 +51,7 @@ local function getMainhandItemActor()
 	local pawn = uevrUtils.get_local_pawn()
 	if pawn == nil then return nil end
 
+	-- TODO check this. Why checking both hands? How do claws work?
 	local proxy = pawn.BPC_Player_WeaponProxy
 	if proxy ~= nil and proxy.GetChildActorForHand ~= nil then
 		for hand = 0, 1 do
@@ -61,12 +63,13 @@ local function getMainhandItemActor()
 		end
 	end
 
-	if uevrUtils.getValid(cachedWeaponUtils) == nil then
-		cachedWeaponUtils = uevrUtils.find_default_instance("Class /Script/DeadIsland.WeaponUtils")
+	-- backup method if above method failed
+	if uevrUtils.getValid(status.cachedWeaponUtils) == nil then
+		status.cachedWeaponUtils = uevrUtils.find_default_instance("Class /Script/DeadIsland.WeaponUtils")
 	end
-	if cachedWeaponUtils ~= nil and proxy ~= nil then
+	if status.cachedWeaponUtils ~= nil and proxy ~= nil then
 		for hand = 0, 1 do
-			local item = cachedWeaponUtils:GetCurrentItemFromPlayerWeaponProxy(proxy, hand)
+			local item = status.cachedWeaponUtils:GetCurrentItemFromPlayerWeaponProxy(proxy, hand)
 			if isMeleeItemActor(item) then
 				return item
 			end
@@ -76,22 +79,31 @@ local function getMainhandItemActor()
 end
 
 local function getMeleeSweepComponent(weapon)
-	local pawn = uevrUtils.get_local_pawn()
-	if uevrUtils.getValid(pawn) ~= nil then
-		local sweep = pawn.BPC_Player_MeleeSweep
-		if uevrUtils.getValid(sweep) ~= nil then
-			return sweep
-		end
-	end
-	if uevrUtils.getValid(weapon) ~= nil then
-		local sweep = weapon.CurrentMeleeSweep or weapon.MeleeSweepComponent
-		if uevrUtils.getValid(sweep) ~= nil then
-			return sweep
-		end
-	end
-	return nil
+	-- try the various ways of getting the sweep component
+	local sweep = uevrUtils.getValid(pawn, {"BPC_Player_MeleeSweep"})
+	if sweep ~= nil then return sweep end
+	sweep = uevrUtils.getValid(weapon, {"CurrentMeleeSweep"})
+	if sweep ~= nil then return sweep end
+	sweep = uevrUtils.getValid(weapon, {"MeleeSweepComponent"})
+	return sweep
+
+	-- local pawn = uevrUtils.get_local_pawn()
+	-- if uevrUtils.getValid(pawn) ~= nil then
+	-- 	local sweep = pawn.BPC_Player_MeleeSweep
+	-- 	if uevrUtils.getValid(sweep) ~= nil then
+	-- 		return sweep
+	-- 	end
+	-- end
+	-- if uevrUtils.getValid(weapon) ~= nil then
+	-- 	local sweep = weapon.CurrentMeleeSweep or weapon.MeleeSweepComponent
+	-- 	if uevrUtils.getValid(sweep) ~= nil then
+	-- 		return sweep
+	-- 	end
+	-- end
+	-- return nil
 end
 
+-- TODO dont use executeFunction to get the visual meshes
 local function getItemVisualWeaponMesh(weapon)
 	if uevrUtils.getValid(weapon) == nil or weapon.GetVisualWeaponMeshComponents == nil then
 		return nil
@@ -147,10 +159,10 @@ local function endVrMeleeSweep()
 	stopMutedAttackMontage()
 	if status.vrMeleeUsedRequestBegin and isMeleeItemActor(weapon) then
 ---@diagnostic disable-next-line: need-check-nil
-		weapon:OnEndRequestedState(EMeleeItemState_StandardAttack)
+		weapon:OnEndRequestedState(EMeleeItemState.StandardAttack)
 	end
 	if isMeleeItemActor(weapon) then
-		weapon.ActiveState = EMeleeItemState_Idle
+		weapon.ActiveState = EMeleeItemState.Idle
 	end
 	local linked = status.vrMeleeLinkedMesh
 	local grip = status.vrMeleeGripMesh
@@ -193,7 +205,7 @@ local function beginVrMeleeSweep()
 	end
 
 	local sweep = getMeleeSweepComponent(weapon)
-	if uevrUtils.getValid(sweep) == nil then return false end
+	if uevrUtils.getValid(sweep) == nil or sweep == nil then return false end
 
 	status.vrMeleeGripMesh = gripMesh
 	status.vrMeleeLinkedMesh = linkMesh
@@ -207,20 +219,19 @@ local function beginVrMeleeSweep()
 	prepareLinkedMeshForVr(gripMesh, linkMesh)
 	local linkTarget = uevrUtils.getValid(gripMesh) ~= nil and gripMesh or linkMesh
 	if uevrUtils.getValid(linkTarget) ~= nil then
----@diagnostic disable-next-line: need-check-nil
 		sweep:SetLinkedWeapon(linkTarget)
 	end
----@diagnostic disable-next-line: need-check-nil
 	sweep:ClearPreviouslyHitComponents()
 
----@diagnostic disable-next-line: need-check-nil
+	---@diagnostic disable-next-line: need-check-nil
 	local began = weapon:RequestBeginStandardAttack() == true
 	status.vrMeleeUsedRequestBegin = began
-	if not began then
-		weapon.ActiveState = EMeleeItemState_StandardAttack
-	end
 
----@diagnostic disable-next-line: need-check-nil
+	-- TODO probably not needed, test and remove if not
+	-- if not began then
+	-- 	weapon.ActiveState = EMeleeItemState.StandardAttack
+	-- end
+
 	sweep:SetSweepActive(true)
 	return true
 end
@@ -261,3 +272,141 @@ end)
 gestures.registerSwipeLeftCallback(function()
 	animateMelee(0)
 end)
+
+---------------------------------------------------------------------------
+-- Melee throw aim: patch ServerRequestThrowItem to match RIGHT_ATTACHMENT.
+---------------------------------------------------------------------------
+local MELEE_THROW_USE_LINE_TRACE = false
+local MELEE_THROW_TRACE_DISTANCE = 10000.0
+local MELEE_THROW_MIN_HIT_DISTANCE = 10.0
+-- local meleeThrowAimActive = false
+
+local function getMeleeThrowAimLocationRotation()
+	local location, rotation = attachments.getActiveAttachmentTransforms(Handed.Right)
+	if location == nil or rotation == nil then
+		return nil, nil
+	end
+	return location, rotation
+end
+
+local function getMeleeThrowTargetLocation(spawnLoc, aimRot)
+	local forward = uevrUtils.getForwardVector(aimRot)
+	if forward == nil then
+		return nil
+	end
+	if MELEE_THROW_USE_LINE_TRACE then
+		local _, targetLoc = uevrUtils.getLineTraceHitResult(
+			uevrUtils.vector(spawnLoc),
+			forward,
+			0,
+			false,
+			{},
+			MELEE_THROW_MIN_HIT_DISTANCE,
+			MELEE_THROW_TRACE_DISTANCE
+		)
+		if targetLoc ~= nil then
+			return uevrUtils.vector(targetLoc)
+		end
+	end
+	return uevrUtils.vector(
+		spawnLoc.X + forward.X * MELEE_THROW_TRACE_DISTANCE,
+		spawnLoc.Y + forward.Y * MELEE_THROW_TRACE_DISTANCE,
+		spawnLoc.Z + forward.Z * MELEE_THROW_TRACE_DISTANCE
+	)
+end
+
+local function buildMeleeThrowAimData()
+	local spawnLoc, aimRot = getMeleeThrowAimLocationRotation()
+	if spawnLoc == nil or aimRot == nil then
+		return nil
+	end
+
+	local aimRotator = uevrUtils.rotator(aimRot)
+	local targetLoc = getMeleeThrowTargetLocation(spawnLoc, aimRot)
+	if targetLoc == nil then
+		return nil
+	end
+
+	return {
+		spawnLoc = spawnLoc,
+		aimRotator = aimRotator,
+		targetLoc = targetLoc,
+		throwTransform = kismet_math_library:MakeTransform(uevrUtils.vector(spawnLoc), aimRotator, uevrUtils.vector(1, 1, 1)),
+	}
+end
+
+local function assignTransformInPlace(dst, srcTransform)
+	if dst == nil or srcTransform == nil then
+		return
+	end
+	if srcTransform.Translation ~= nil then
+		dst.Translation = srcTransform.Translation
+	end
+	if srcTransform.Rotation ~= nil then
+		dst.Rotation = srcTransform.Rotation
+	end
+	if srcTransform.Scale3D ~= nil then
+		dst.Scale3D = srcTransform.Scale3D
+	end
+end
+
+local function applyMeleeThrowAimToThrowItem(locals)
+	if locals == nil or not isMeleeItemActor(locals.Item) then
+		return
+	end
+
+	local data = buildMeleeThrowAimData()
+	if data == nil then
+		return
+	end
+
+	locals.RequesterCameraTransform = locals.RequesterCameraTransform or data.throwTransform
+	locals.ProjectileSpawnTransform = locals.ProjectileSpawnTransform or data.throwTransform
+	locals.VisualTransform = locals.VisualTransform or data.throwTransform
+	assignTransformInPlace(locals.RequesterCameraTransform, data.throwTransform)
+	assignTransformInPlace(locals.ProjectileSpawnTransform, data.throwTransform)
+	assignTransformInPlace(locals.VisualTransform, data.throwTransform)
+
+	local targetPointInfo = locals.TargetPointInfo
+	if targetPointInfo ~= nil then
+		targetPointInfo.VectorLocation = uevrUtils.vector(data.targetLoc)
+		targetPointInfo.bVectorValid = true
+		targetPointInfo.bRotatorValid = true
+		targetPointInfo.RotatorRotation = data.aimRotator
+	end
+end
+
+-- local function endMeleeThrowAim()
+-- 	if not meleeThrowAimActive then
+-- 		return
+-- 	end
+-- 	meleeThrowAimActive = false
+-- end
+
+-- local function beginMeleeThrowAim()
+-- 	meleeThrowAimActive = true
+-- 	uevrUtils.updateDeferral("melee_throw_aim")
+-- end
+
+-- uevrUtils.createDeferral("melee_throw_aim", MELEE_THROW_AIM_MS, function()
+-- 	endMeleeThrowAim()
+-- end)
+
+-- hook_function("Class /Script/DeadIsland.MeleeWeaponItemActor", "RequestBeginThrow", true,
+-- 	function(fn, obj, locals)
+-- 		print("[DI2] RequestBeginThrow")
+-- 		beginMeleeThrowAim()
+-- 	end,
+-- 	nil,
+-- 	false
+-- )
+
+hook_function("Class /Script/DeadIsland.DIPlayerCharacter", "ServerRequestThrowItem", true,
+	function(fn, obj, locals)
+		--print("[DI2] ServerRequestThrowItem")
+		applyMeleeThrowAimToThrowItem(locals)
+		-- uevrUtils.updateDeferral("melee_throw_aim")
+	end,
+	nil,
+	false
+)

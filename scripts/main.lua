@@ -36,7 +36,7 @@ attachments.setLogLevel(LogLevel.Debug)
 -- ik.setLogLevel(LogLevel.Debug)
 
 uevrUtils.setDeveloperMode(true)
-hands.enableConfigurationTool()
+--hands.enableConfigurationTool()
 --uevrUtils.profiler:toggle(true)
 
 
@@ -682,6 +682,7 @@ local function refreshHiddenMaterials(mesh)
 end
 
 local function maintainMeshFirstPersonMaterials()
+	if status.fpMaterialsHidden == false then return end
 	local mesh = getMeshFirstPerson()
 	if uevrUtils.getValid(mesh) == nil then return end
 	-- Always re-apply. Do not gate on fpMaterialsHidden — restore leaves that false and
@@ -783,9 +784,11 @@ montage.registerMontageChangeCallback(function(montageObject, montageName, label
 	--if montageName starts with "AM_Base_Hit_Knockdown" then
 	if uevrUtils.startsWith(montageName, "AM_Base_Hit_Knockdown") then
 		setMeshFirstPersonMaterialsHidden(false)
+		input.setDisabled(true)
 		status.knockdown = true
 	elseif status.knockdown == true then
 		setMeshFirstPersonMaterialsHidden(true)
+		input.setDisabled(false)
 		status.knockdown = false
 	end
 end)
@@ -794,8 +797,10 @@ end)
 local lastActiveScaleformMenus = {}
 setInterval(500, function()
 	local current = {}
-	local menuManager = uevrUtils.find_first_of("Class /Script/DeadIsland.MenuManager", false)
-	local activeMenus = uevrUtils.getValid(menuManager) ~= nil and menuManager.ActiveMenus or nil
+	if uevrUtils.getValid(status.menuManager) == nil then
+		status.menuManager = uevrUtils.find_first_of("Class /Script/DeadIsland.MenuManager", false)
+	end
+	local activeMenus = uevrUtils.getValid(status.menuManager) ~= nil and status.menuManager.ActiveMenus or nil
 	if activeMenus ~= nil then
 		local consecutiveNils = 0
 		for i = 0, 31 do
@@ -821,16 +826,33 @@ setInterval(500, function()
 			end
 		end
 	end
-	local failScreen = uevrUtils.find_first_of("Class /Script/DeadIsland.HUDObject_FailScreen", false)
-	if uevrUtils.getValid(failScreen) ~= nil then
+	if uevrUtils.getValid(status.failScreen) == nil then
+		status.failScreen = uevrUtils.find_first_of("Class /Script/DeadIsland.HUDObject_FailScreen", false)
+	end
+	if uevrUtils.getValid(status.failScreen) ~= nil then
 		local showing = false
 		pcall(function()
-			showing = failScreen:IsBaseAssetShowing() == true or failScreen:IsInAnActiveState() == true
+			showing = status.failScreen:IsBaseAssetShowing() == true or status.failScreen:IsInAnActiveState() == true
 		end)
 		if showing then
 			current["BP_HUDObject_FailScreen_C"] = true
 		end
 	end
+
+	if uevrUtils.getValid(status.fader) == nil then
+		status.fader = uevrUtils.find_first_of("Class /Script/DeadIsland.HUDObject_Fader", false)
+	end
+	if uevrUtils.getValid(status.fader) ~= nil then
+		local showing = false
+		pcall(function()
+			local movie = status.fader:GetAsset("Fader")
+			showing = movie ~= nil and movie:GetRootVisibility() == true
+		end)
+		if showing then
+			current["BP_HUDObject_Fader_C"] = true
+		end
+	end
+
 	for className, _ in pairs(current) do
 		if lastActiveScaleformMenus[className] ~= true then
 			uevrUtils.executeUEVRCallbacks("scaleform_ui_change", className, true)
@@ -843,31 +865,30 @@ setInterval(500, function()
 	end
 	lastActiveScaleformMenus = current
 
-	-- local localPawn = uevrUtils.get_local_pawn()
-	-- if localPawn ~= lastTrackedPawn then
-	-- 	lastTrackedPawn = localPawn
-	-- 	if current["BP_MenuInstance_Locker_C"] == true then
-	-- 		pendingFirstPersonRestore = true
-	-- 	else
-	-- 		restoreFirstPersonView(true)
-	-- 	end
-	-- elseif pendingFirstPersonRestore and current["BP_MenuInstance_Locker_C"] ~= true then
-	-- 	pendingFirstPersonRestore = false
-	-- 	uevrUtils.delay(250, function()
-	-- 		restoreFirstPersonView(true)
-	-- 	end)
-	-- end
+end)
+
+setInterval(5000, function()
+	pcall(function()
+		if lastActiveScaleformMenus["BP_HUDObject_Fader_C"] ~= true then return end
+		local widget = uevrUtils.find_first_of("Class /Script/DeadIsland.ManualHUDFaderWidget", false)
+		if widget.EasedEffectValue > 0.05 then return end
+		status.fader:GetAsset("Fader"):SetRootVisibility(false)
+		uevrUtils.stopFadeCamera()
+		print("[DI2] stuck movie fader, hiding")
+	end)
 end)
 
 uevrUtils.registerUEVRCallback("scaleform_ui_change", function(className, visible)
 	print("[DI2] scaleform_ui_change", className, visible)
 	if className == "BP_MenuInstance_Locker_C" or className == "BP_HUDObject_FailScreen_C" and visible == false then
-		-- pendingFirstPersonRestore = false
-		-- uevrUtils.delay(250, function()
-		-- 	restoreFirstPersonView(true)
-		-- end)
 		regenerateHands(configui.getValue("hands_type"))
 		--input.reset()
+	elseif className == "BP_HUDObject_Fader_C" then
+		if visible == true then
+			uevrUtils.fadeCamera(0.1)
+		else
+			uevrUtils.stopFadeCamera()
+		end
 	end
 end)
 --------------------- End Special Scaleform UI handlers -----------------------------
@@ -887,12 +908,26 @@ register_key_bind("F1", dumpMeshFirstPersonMaterials)
 
 configui.create(configDefinition)
 
-local reticleHidden = false
+local meshHidden = false
 register_key_bind("F2", function()
-	reticleHidden = not reticleHidden
-	setMeshFirstPersonMaterialsHidden(reticleHidden)
+	meshHidden = not meshHidden
+	setMeshFirstPersonMaterialsHidden(meshHidden)
+end)
+
+register_key_bind("F3", function()
+	pcall(function()
+		if uevrUtils.getValid(status.fader) == nil then
+			status.fader = uevrUtils.find_first_of("Class /Script/DeadIsland.HUDObject_Fader", false)
+		end
+		local movie = status.fader:GetAsset("Fader")
+		movie:SetRootVisibility(false)
+		uevrUtils.stopFadeCamera()
+		print("[DI2] fader SetRootVisibility(false)", movie:GetRootVisibility())
+	end)
 end)
 
 uevrUtils.registerOnPreInputGetStateCallback(function(retval, user_index, state)
 	--print(state.Gamepad.sThumbRY)
 end)
+
+
