@@ -79,6 +79,16 @@ function M.vectorSet(v, x, y, z)
 	end
 end
 
+-- Mutate an existing FVector so UEVR hook locals write through instead of replacing userdata.
+function M.assignVectorInPlace(dst, src)
+	if dst == nil or src == nil then
+		return
+	end
+	if src.X ~= nil then dst.X = src.X end
+	if src.Y ~= nil then dst.Y = src.Y end
+	if src.Z ~= nil then dst.Z = src.Z end
+end
+
 function M.vectorCross(a, b, preferKismet)
 	if preferKismet and  kismet_math_library and kismet_math_library.Cross_VectorVector then
 		return kismet_math_library:Cross_VectorVector(a, b)
@@ -811,6 +821,22 @@ function M.getTransform(position, rotation, scale, reuseable)
 		end
 	end
 	return transform
+end
+
+-- Mutate an existing FTransform so UEVR hook locals write through instead of replacing userdata.
+function M.assignTransformInPlace(dst, srcTransform)
+	if dst == nil or srcTransform == nil then
+		return
+	end
+	if srcTransform.Translation ~= nil then
+		dst.Translation = srcTransform.Translation
+	end
+	if srcTransform.Rotation ~= nil then
+		dst.Rotation = srcTransform.Rotation
+	end
+	if srcTransform.Scale3D ~= nil then
+		dst.Scale3D = srcTransform.Scale3D
+	end
 end
 
 function M.vector2D(...)

@@ -20,6 +20,7 @@ local collision = require('libs/collision')
 local laser = require('libs/laser')
 local plugin = require('libs/core/plugin')
 require("helpers/melee")
+require("helpers/curveball")
 local portables = require("helpers/portables")
 local dev = require('libs/uevr_dev')
 dev.init()
@@ -814,8 +815,10 @@ setInterval(500, function()
 			else
 				consecutiveNils = 0
 				local className = nil
+				---@type any
+				local validMenu = menu
 				pcall(function()
-					local cls = menu:get_class()
+					local cls = validMenu.get_class ~= nil and validMenu:get_class() or nil
 					if cls ~= nil then --and cls.get_full_name ~= nil then
 						className = uevrUtils.getShortName(cls) --cls:get_full_name()
 					end
@@ -871,7 +874,7 @@ setInterval(5000, function()
 	pcall(function()
 		if lastActiveScaleformMenus["BP_HUDObject_Fader_C"] ~= true then return end
 		local widget = uevrUtils.find_first_of("Class /Script/DeadIsland.ManualHUDFaderWidget", false)
-		if widget.EasedEffectValue > 0.05 then return end
+		if widget == nil or widget.EasedEffectValue > 0.05 then return end
 		status.fader:GetAsset("Fader"):SetRootVisibility(false)
 		uevrUtils.stopFadeCamera()
 		print("[DI2] stuck movie fader, hiding")

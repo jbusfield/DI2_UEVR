@@ -1,9 +1,9 @@
 local uevrUtils = require('libs/uevr_utils')
+local mathLib = require('libs/core/math_lib')
 local montage = require('libs/montage')
 local gestures = require('libs/gestures')
 local input = require('libs/input')
 local attachments = require('libs/attachments')
-local plugin = require('libs/core/plugin')
 
 ---------------------------------------------------------------------------
 -- VR melee: RequestBeginStandardAttack (durability / attack state), mute body
@@ -86,56 +86,6 @@ local function getMeleeSweepComponent(weapon)
 	if sweep ~= nil then return sweep end
 	sweep = uevrUtils.getValid(weapon, {"MeleeSweepComponent"})
 	return sweep
-
-	-- local pawn = uevrUtils.get_local_pawn()
-	-- if uevrUtils.getValid(pawn) ~= nil then
-	-- 	local sweep = pawn.BPC_Player_MeleeSweep
-	-- 	if uevrUtils.getValid(sweep) ~= nil then
-	-- 		return sweep
-	-- 	end
-	-- end
-	-- if uevrUtils.getValid(weapon) ~= nil then
-	-- 	local sweep = weapon.CurrentMeleeSweep or weapon.MeleeSweepComponent
-	-- 	if uevrUtils.getValid(sweep) ~= nil then
-	-- 		return sweep
-	-- 	end
-	-- end
-	-- return nil
-end
-
--- TODO dont use executeFunction to get the visual meshes
-local function getItemVisualWeaponMesh(weapon)
-	if uevrUtils.getValid(weapon) == nil or weapon.GetVisualWeaponMeshComponents == nil then
-		return nil
-	end
-	local result = plugin.executeFunction(weapon, "GetVisualWeaponMeshComponents", {})
-	local visuals = result and (result.ReturnValue or result.OutMeshes or result.VisualWeaponMeshComponents)
-	if type(visuals) ~= "table" then return nil end
-	for _, v in ipairs(visuals) do
-		if uevrUtils.getValid(v) ~= nil then
-			return v
-		end
-	end
-	return nil
-end
-
-local function prepareLinkedMeshForVr(grip, linked)
-	if uevrUtils.getValid(grip) == nil or uevrUtils.getValid(linked) == nil or grip == linked then
-		return
-	end
-	if status.vrMeleeLinkedPrepared then return end
-	linked:DetachFromParent(true, false)
-	linked:K2_AttachToComponent(grip, "", 2, 2, 2, false)
-	if linked.SetRelativeLocation ~= nil then
-		linked:SetRelativeLocation({X=0,Y=0,Z=0}, false, reusable_hit_result, false)
-	end
-	if linked.SetRelativeRotation ~= nil then
-		linked:SetRelativeRotation({Pitch=0,Yaw=0,Roll=0}, false, reusable_hit_result, false)
-	end
-	if linked.SetMasterPoseComponent ~= nil then
-		linked:SetMasterPoseComponent(grip, true)
-	end
-	status.vrMeleeLinkedPrepared = true
 end
 
 local function getWeaponMesh()
@@ -164,22 +114,8 @@ local function endVrMeleeSweep()
 	if isMeleeItemActor(weapon) then
 		weapon.ActiveState = EMeleeItemState.Idle
 	end
-	local linked = status.vrMeleeLinkedMesh
-	local grip = status.vrMeleeGripMesh
-	if status.vrMeleeLinkedPrepared and uevrUtils.getValid(linked) ~= nil and linked ~= grip then
----@diagnostic disable-next-line: need-check-nil
-		if linked.SetMasterPoseComponent ~= nil then
----@diagnostic disable-next-line: need-check-nil
-			linked:SetMasterPoseComponent(nil, true)
-		end
----@diagnostic disable-next-line: need-check-nil
-		linked:DetachFromParent(true, false)
-	end
 	status.vrMeleeSweep = nil
 	status.vrMeleeWeapon = nil
-	status.vrMeleeGripMesh = nil
-	status.vrMeleeLinkedMesh = nil
-	status.vrMeleeLinkedPrepared = nil
 	status.vrMeleeSweepActive = false
 	status.vrMeleeUsedRequestBegin = nil
 end
@@ -198,39 +134,21 @@ local function beginVrMeleeSweep()
 	end
 	if not isMeleeItemActor(weapon) then return false end
 
-	local itemVisual = getItemVisualWeaponMesh(weapon)
-	local linkMesh = gripMesh
-	if uevrUtils.getValid(itemVisual) ~= nil and itemVisual ~= gripMesh then
-		linkMesh = itemVisual
-	end
-
 	local sweep = getMeleeSweepComponent(weapon)
 	if uevrUtils.getValid(sweep) == nil or sweep == nil then return false end
 
-	status.vrMeleeGripMesh = gripMesh
-	status.vrMeleeLinkedMesh = linkMesh
-	status.vrMeleeLinkedPrepared = false
 	status.vrMeleeSweep = sweep
 	status.vrMeleeWeapon = weapon
 	status.vrMeleeSweepActive = true
 	status.vrMeleeUsedRequestBegin = false
 	status.vrMeleeMutedMontage = nil
 
-	prepareLinkedMeshForVr(gripMesh, linkMesh)
-	local linkTarget = uevrUtils.getValid(gripMesh) ~= nil and gripMesh or linkMesh
-	if uevrUtils.getValid(linkTarget) ~= nil then
-		sweep:SetLinkedWeapon(linkTarget)
-	end
+	sweep:SetLinkedWeapon(gripMesh)
 	sweep:ClearPreviouslyHitComponents()
 
 	---@diagnostic disable-next-line: need-check-nil
 	local began = weapon:RequestBeginStandardAttack() == true
 	status.vrMeleeUsedRequestBegin = began
-
-	-- TODO probably not needed, test and remove if not
-	-- if not began then
-	-- 	weapon.ActiveState = EMeleeItemState.StandardAttack
-	-- end
 
 	sweep:SetSweepActive(true)
 	return true
@@ -276,7 +194,7 @@ end)
 ---------------------------------------------------------------------------
 -- Melee throw aim: patch ServerRequestThrowItem to match RIGHT_ATTACHMENT.
 ---------------------------------------------------------------------------
-local MELEE_THROW_USE_LINE_TRACE = false
+local MELEE_THROW_USE_LINE_TRACE = true -- true is theoretically more accurate but both ways seems to give the same result
 local MELEE_THROW_TRACE_DISTANCE = 10000.0
 local MELEE_THROW_MIN_HIT_DISTANCE = 10.0
 -- local meleeThrowAimActive = false
@@ -335,21 +253,6 @@ local function buildMeleeThrowAimData()
 	}
 end
 
-local function assignTransformInPlace(dst, srcTransform)
-	if dst == nil or srcTransform == nil then
-		return
-	end
-	if srcTransform.Translation ~= nil then
-		dst.Translation = srcTransform.Translation
-	end
-	if srcTransform.Rotation ~= nil then
-		dst.Rotation = srcTransform.Rotation
-	end
-	if srcTransform.Scale3D ~= nil then
-		dst.Scale3D = srcTransform.Scale3D
-	end
-end
-
 local function applyMeleeThrowAimToThrowItem(locals)
 	if locals == nil or not isMeleeItemActor(locals.Item) then
 		return
@@ -363,9 +266,9 @@ local function applyMeleeThrowAimToThrowItem(locals)
 	locals.RequesterCameraTransform = locals.RequesterCameraTransform or data.throwTransform
 	locals.ProjectileSpawnTransform = locals.ProjectileSpawnTransform or data.throwTransform
 	locals.VisualTransform = locals.VisualTransform or data.throwTransform
-	assignTransformInPlace(locals.RequesterCameraTransform, data.throwTransform)
-	assignTransformInPlace(locals.ProjectileSpawnTransform, data.throwTransform)
-	assignTransformInPlace(locals.VisualTransform, data.throwTransform)
+	mathLib.assignTransformInPlace(locals.RequesterCameraTransform, data.throwTransform)
+	mathLib.assignTransformInPlace(locals.ProjectileSpawnTransform, data.throwTransform)
+	mathLib.assignTransformInPlace(locals.VisualTransform, data.throwTransform)
 
 	local targetPointInfo = locals.TargetPointInfo
 	if targetPointInfo ~= nil then
