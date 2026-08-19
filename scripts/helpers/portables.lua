@@ -13,6 +13,7 @@ local NORMAL_THROW_KG_METERS = 20.0
 local THROW_LOCKOUT_MS = 1000
 local ATTACH_NO_COLLISION_MS = 1000
 local DOCK_WAIT_FRAMES = 10
+local TRIGGER_THRESHOLD = 128
 
 local throwing = false
 local throwingCallbacks = {}
@@ -39,6 +40,9 @@ local portableDrop = {
 }
 
 local attachCollisionMesh = nil
+local leftTriggerHeld = false
+local pendingThrowAimLoc = nil
+local pendingThrowAimRot = nil
 
 local function restorePortableAttachCollision()
 	local mesh = attachCollisionMesh
@@ -245,22 +249,51 @@ local function updatePortableDrop(delta)
 
 	if portableDrop.holding then
 		local mesh = portableDrop.mesh
-		local kg = attachments.getAttachmentWeight(mesh)
-		if kg == 0 then
-			kg = DEFAULT_THROW_MASS
-		end
+		local loc = portableDrop.lastMeshLoc or throwSampler.lastHandLoc
+		local velocity = nil
 		local dockWait = 0
-		pcall(function()
-			local owner = portableDrop.carryable ~= nil and portableDrop.carryable:GetOwner() or nil
-			if owner ~= nil and owner.Dockable ~= nil then
-				dockWait = DOCK_WAIT_FRAMES
+		if leftTriggerHeld then
+			loc = pendingThrowAimLoc or loc
+			local rot = pendingThrowAimRot
+			local speed = 0
+			pcall(function()
+				local carryable = portableDrop.carryable
+				if carryable ~= nil and carryable.InitialThrowSpeed ~= nil then
+					speed = carryable.InitialThrowSpeed
+				end
+			end)
+			if speed < 1 and uevrUtils.getValid(mesh) ~= nil then
+				pcall(function()
+					local current = mesh:GetPhysicsLinearVelocity()
+					if current ~= nil then
+						speed = math.sqrt((current.X or 0) * (current.X or 0) + (current.Y or 0) * (current.Y or 0) + (current.Z or 0) * (current.Z or 0))
+					end
+				end)
 			end
-		end)
+			local forward = rot ~= nil and uevrUtils.getForwardVector(uevrUtils.rotator(rot)) or nil
+			if forward ~= nil and speed >= 1 then
+				velocity = { X = forward.X * speed, Y = forward.Y * speed, Z = forward.Z * speed }
+			end
+			pendingThrowAimLoc = nil
+			pendingThrowAimRot = nil
+		else
+			local kg = attachments.getAttachmentWeight(mesh)
+			if kg == 0 then
+				kg = DEFAULT_THROW_MASS
+			end
+			velocity = physics.getReleaseVelocity(throwSampler, NORMAL_THROW_KG_METERS * THROW_GAIN / kg)
+			pcall(function()
+				local owner = portableDrop.carryable ~= nil and portableDrop.carryable:GetOwner() or nil
+				if owner ~= nil and owner.Dockable ~= nil then
+					dockWait = DOCK_WAIT_FRAMES
+				end
+			end)
+		end
 		portableDrop.pending = {
 			mesh = mesh,
 			carryable = portableDrop.carryable,
-			loc = portableDrop.lastMeshLoc or throwSampler.lastHandLoc,
-			velocity = physics.getReleaseVelocity(throwSampler, NORMAL_THROW_KG_METERS * THROW_GAIN / kg),
+			loc = loc,
+			velocity = velocity,
 			placed = false,
 			dockWait = dockWait,
 			armed = false,
@@ -316,6 +349,31 @@ uevrUtils.createDeferral("portable_attach", ATTACH_NO_COLLISION_MS, function()
 		restorePortableAttachCollision()
 	end
 end)
+
+uevr.sdk.callbacks.on_xinput_get_state(function(retval, user_index, state)
+	leftTriggerHeld = state.Gamepad.bLeftTrigger > TRIGGER_THRESHOLD
+end)
+
+-- Capture while the grip still exists. ServerRequestThrowCarryable never hits Lua.
+local function captureThrowAim()
+	local loc = attachments.getActiveAttachmentTransforms(Handed.Right)
+	if loc == nil or (math.abs(loc.X or 0) <= 1 and math.abs(loc.Y or 0) <= 1 and math.abs(loc.Z or 0) <= 1) then
+		return
+	end
+	pendingThrowAimLoc = uevrUtils.vector(loc.X, loc.Y, loc.Z)
+	local rot = controllers.getControllerRotation(Handed.Right)
+	if rot ~= nil then
+		pendingThrowAimRot = uevrUtils.rotator(rot.Pitch, rot.Yaw, rot.Roll)
+	end
+end
+
+hook_function("Class /Script/DeadIsland.CarryThrowAction", "OnThrowCarryable", true,
+	function(fn, obj, locals)
+		captureThrowAim()
+	end,
+	nil,
+	false
+)
 
 uevr.sdk.callbacks.on_post_engine_tick(function(engine, delta)
 	updatePortableDrop(delta)
