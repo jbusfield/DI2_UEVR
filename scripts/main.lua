@@ -37,7 +37,7 @@ attachments.setLogLevel(LogLevel.Debug)
 -- ik.setLogLevel(LogLevel.Debug)
 
 uevrUtils.setDeveloperMode(true)
-hands.enableConfigurationTool()
+--hands.enableConfigurationTool()
 --uevrUtils.profiler:toggle(true)
 
 

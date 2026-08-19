@@ -774,6 +774,7 @@ function M.update(originLocation, targetLocation, drawDistance, scale, rotation,
 		if isHidden or scopeHidden then
 			reticuleComponent:SetVisibility(false)
 			unsubscribeFromLineTracer()
+			--print("[DI2][reticule] hidden or scope hidden")
 			return
 		end
 

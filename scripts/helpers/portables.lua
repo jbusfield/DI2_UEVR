@@ -51,7 +51,7 @@ local function restorePortableAttachCollision()
 		return
 	end
 	pcall(function()
-	---@diagnostic disable-next-line: need-check-nil
+	---@diagnostic disable-next-line: undefined-field, need-check-nil
 		mesh:SetCollisionEnabled(ECollisionEnabled.QueryAndPhysics)
 	end)
 end
@@ -190,124 +190,132 @@ local function applyPortableDrop(pending)
 	return true
 end
 
+local function updateHoldSampling(portable, delta)
+	if not portableDrop.holding then
+		portableDrop.holding = true
+		portableDrop.pending = nil
+		portableDrop.wait = 0
+		throwSampler.idleDelta = 0
+	end
+	portableDrop.carryable = portable
+	if portableDrop.mesh == nil then
+		portableDrop.mesh = getPortableMeshFrom(portable)
+		if portableDrop.mesh ~= nil then
+			beginPortableAttachNoCollision(portableDrop.mesh)
+		end
+	end
+	local mesh = portableDrop.mesh
+	if mesh ~= nil then
+		local meshLoc = uevrUtils.getComponentLocation(mesh)
+		if meshLoc ~= nil then
+			local stored = portableDrop.lastMeshLoc
+			if stored == nil then
+				portableDrop.lastMeshLoc = { X = meshLoc.X, Y = meshLoc.Y, Z = meshLoc.Z }
+			else
+				stored.X = meshLoc.X
+				stored.Y = meshLoc.Y
+				stored.Z = meshLoc.Z
+			end
+		end
+	end
+	local hmd = controllers.getControllerLocation(2)
+	local hx, hy, hz = nil, nil, nil
+	if hmd ~= nil then
+		hx = hmd.X
+		hy = hmd.Y
+		hz = hmd.Z
+	end
+	local loc = controllers.getControllerLocation(Handed.Right)
+	if loc == nil then
+		return
+	end
+	local hmdLoc = nil
+	if hx ~= nil then
+		hmdLoc = portableDrop.hmdCopy
+		if hmdLoc == nil then
+			hmdLoc = { X = hx, Y = hy, Z = hz }
+			portableDrop.hmdCopy = hmdLoc
+		else
+			hmdLoc.X = hx
+			hmdLoc.Y = hy
+			hmdLoc.Z = hz
+		end
+	end
+	physics.updateThrowSampler(throwSampler, loc, hmdLoc, delta)
+end
+
+local function onPortableReleased()
+	local mesh = portableDrop.mesh
+	local loc = portableDrop.lastMeshLoc or throwSampler.lastHandLoc
+	local velocity = nil
+	local dockWait = 0
+	if leftTriggerHeld then
+		loc = pendingThrowAimLoc or loc
+		local rot = pendingThrowAimRot
+		local speed = 0
+		pcall(function()
+			local carryable = portableDrop.carryable
+			if carryable ~= nil and carryable.InitialThrowSpeed ~= nil then
+				speed = carryable.InitialThrowSpeed
+			end
+		end)
+		if speed < 1 and uevrUtils.getValid(mesh) ~= nil then
+			pcall(function()
+				---@diagnostic disable-next-line: need-check-nil
+				local current = mesh:GetPhysicsLinearVelocity()
+				if current ~= nil then
+					speed = math.sqrt((current.X or 0) * (current.X or 0) + (current.Y or 0) * (current.Y or 0) + (current.Z or 0) * (current.Z or 0))
+				end
+			end)
+		end
+		local forward = rot ~= nil and uevrUtils.getForwardVector(uevrUtils.rotator(rot)) or nil
+		if forward ~= nil and speed >= 1 then
+			velocity = { X = forward.X * speed, Y = forward.Y * speed, Z = forward.Z * speed }
+		end
+		pendingThrowAimLoc = nil
+		pendingThrowAimRot = nil
+	else
+		local kg = attachments.getAttachmentWeight(mesh)
+		if kg == 0 then
+			kg = DEFAULT_THROW_MASS
+		end
+		velocity = physics.getReleaseVelocity(throwSampler, NORMAL_THROW_KG_METERS * THROW_GAIN / kg)
+		pcall(function()
+			local owner = portableDrop.carryable ~= nil and portableDrop.carryable:GetOwner() or nil
+			if owner ~= nil and owner.Dockable ~= nil then
+				dockWait = DOCK_WAIT_FRAMES
+			end
+		end)
+	end
+	portableDrop.pending = {
+		mesh = mesh,
+		carryable = portableDrop.carryable,
+		loc = loc,
+		velocity = velocity,
+		placed = false,
+		dockWait = dockWait,
+		armed = false,
+	}
+	portableDrop.holding = false
+	portableDrop.mesh = nil
+	portableDrop.lastMeshLoc = nil
+	portableDrop.wait = 0
+	physics.resetThrowSampler(throwSampler)
+	attachments.detachGripAttachments(Handed.Right)
+	if isPortableDocked(portableDrop.pending.carryable) then
+		clearPortableDrop()
+	end
+end
+
 local function updatePortableDrop(delta)
 	local portable = getHoldingPortable()
 	if portable ~= nil then
-		if not portableDrop.holding then
-			portableDrop.holding = true
-			portableDrop.pending = nil
-			portableDrop.wait = 0
-			throwSampler.idleDelta = 0
-		end
-		portableDrop.carryable = portable
-		if portableDrop.mesh == nil then
-			portableDrop.mesh = getPortableMeshFrom(portable)
-			if portableDrop.mesh ~= nil then
-				beginPortableAttachNoCollision(portableDrop.mesh)
-			end
-		end
-		local mesh = portableDrop.mesh
-		if mesh ~= nil then
-			local meshLoc = uevrUtils.getComponentLocation(mesh)
-			if meshLoc ~= nil then
-				local stored = portableDrop.lastMeshLoc
-				if stored == nil then
-					portableDrop.lastMeshLoc = { X = meshLoc.X, Y = meshLoc.Y, Z = meshLoc.Z }
-				else
-					stored.X = meshLoc.X
-					stored.Y = meshLoc.Y
-					stored.Z = meshLoc.Z
-				end
-			end
-		end
-		local hmd = controllers.getControllerLocation(2)
-		local hx, hy, hz = nil, nil, nil
-		if hmd ~= nil then
-			hx = hmd.X
-			hy = hmd.Y
-			hz = hmd.Z
-		end
-		local loc = controllers.getControllerLocation(Handed.Right)
-		if loc == nil then
-			return
-		end
-		local hmdLoc = nil
-		if hx ~= nil then
-			hmdLoc = portableDrop.hmdCopy
-			if hmdLoc == nil then
-				hmdLoc = { X = hx, Y = hy, Z = hz }
-				portableDrop.hmdCopy = hmdLoc
-			else
-				hmdLoc.X = hx
-				hmdLoc.Y = hy
-				hmdLoc.Z = hz
-			end
-		end
-		physics.updateThrowSampler(throwSampler, loc, hmdLoc, delta)
+		updateHoldSampling(portable, delta)
 		return
 	end
 
 	if portableDrop.holding then
-		local mesh = portableDrop.mesh
-		local loc = portableDrop.lastMeshLoc or throwSampler.lastHandLoc
-		local velocity = nil
-		local dockWait = 0
-		if leftTriggerHeld then
-			loc = pendingThrowAimLoc or loc
-			local rot = pendingThrowAimRot
-			local speed = 0
-			pcall(function()
-				local carryable = portableDrop.carryable
-				if carryable ~= nil and carryable.InitialThrowSpeed ~= nil then
-					speed = carryable.InitialThrowSpeed
-				end
-			end)
-			if speed < 1 and uevrUtils.getValid(mesh) ~= nil then
-				pcall(function()
-					local current = mesh:GetPhysicsLinearVelocity()
-					if current ~= nil then
-						speed = math.sqrt((current.X or 0) * (current.X or 0) + (current.Y or 0) * (current.Y or 0) + (current.Z or 0) * (current.Z or 0))
-					end
-				end)
-			end
-			local forward = rot ~= nil and uevrUtils.getForwardVector(uevrUtils.rotator(rot)) or nil
-			if forward ~= nil and speed >= 1 then
-				velocity = { X = forward.X * speed, Y = forward.Y * speed, Z = forward.Z * speed }
-			end
-			pendingThrowAimLoc = nil
-			pendingThrowAimRot = nil
-		else
-			local kg = attachments.getAttachmentWeight(mesh)
-			if kg == 0 then
-				kg = DEFAULT_THROW_MASS
-			end
-			velocity = physics.getReleaseVelocity(throwSampler, NORMAL_THROW_KG_METERS * THROW_GAIN / kg)
-			pcall(function()
-				local owner = portableDrop.carryable ~= nil and portableDrop.carryable:GetOwner() or nil
-				if owner ~= nil and owner.Dockable ~= nil then
-					dockWait = DOCK_WAIT_FRAMES
-				end
-			end)
-		end
-		portableDrop.pending = {
-			mesh = mesh,
-			carryable = portableDrop.carryable,
-			loc = loc,
-			velocity = velocity,
-			placed = false,
-			dockWait = dockWait,
-			armed = false,
-		}
-		portableDrop.holding = false
-		portableDrop.mesh = nil
-		portableDrop.lastMeshLoc = nil
-		portableDrop.wait = 0
-		physics.resetThrowSampler(throwSampler)
-		attachments.detachGripAttachments(Handed.Right)
-		if isPortableDocked(portableDrop.pending.carryable) then
-			clearPortableDrop()
-			return
-		end
+		onPortableReleased()
 	end
 
 	local pending = portableDrop.pending
