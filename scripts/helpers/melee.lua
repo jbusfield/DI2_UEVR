@@ -13,7 +13,13 @@ local status = {}
 local EMeleeItemState = {
 	Idle = 0,
 	StandardAttack = 1,
+	HeavyAttack = 2,
 }
+local RIGHT_TRIGGER_HEAVY_THRESHOLD = 128
+
+local function weaponHandIndex(hand)
+	return hand == Handed.Left and 1 or 0
+end
 
 local function isMeleeItemActor(actor)
 	return uevrUtils.getValid(actor) ~= nil and actor.RequestBeginStandardAttack ~= nil
@@ -40,46 +46,33 @@ local function stopMutedAttackMontage()
 	end
 end
 
-attachments.registerAttachmentChangeCallback(function(id, gripHand, attachment)
-	local isMeleeWeapon = type(id) == "string" and string.find(id, "BP_MeleeWeapon", 1, true) == 1
-	gestures.autoDetectGesture(gestures.Gesture.SWIPE_RIGHT, isMeleeWeapon)
-	gestures.autoDetectGesture(gestures.Gesture.SWIPE_LEFT, isMeleeWeapon)
-	status.isMeleeWeapon = isMeleeWeapon
-end)
-
-local function getMainhandItemActor()
+local function getMeleeItemActor(hand)
 	local pawn = uevrUtils.get_local_pawn()
 	if pawn == nil then return nil end
 
-	-- TODO check this. Why checking both hands? How do claws work?
 	local proxy = pawn.BPC_Player_WeaponProxy
 	if proxy ~= nil and proxy.GetChildActorForHand ~= nil then
-		for hand = 0, 1 do
-			local childComp = proxy:GetChildActorForHand(hand)
-			local actor = childComp and childComp.ChildActor
-			if isMeleeItemActor(actor) then
-				return actor
-			end
+		local childComp = proxy:GetChildActorForHand(weaponHandIndex(hand))
+		local actor = childComp and childComp.ChildActor
+		if isMeleeItemActor(actor) then
+			return actor
 		end
 	end
 
-	-- backup method if above method failed
 	if uevrUtils.getValid(status.cachedWeaponUtils) == nil then
 		status.cachedWeaponUtils = uevrUtils.find_default_instance("Class /Script/DeadIsland.WeaponUtils")
 	end
 	if status.cachedWeaponUtils ~= nil and proxy ~= nil then
-		for hand = 0, 1 do
-			local item = status.cachedWeaponUtils:GetCurrentItemFromPlayerWeaponProxy(proxy, hand)
-			if isMeleeItemActor(item) then
-				return item
-			end
+		local item = status.cachedWeaponUtils:GetCurrentItemFromPlayerWeaponProxy(proxy, weaponHandIndex(hand))
+		if isMeleeItemActor(item) then
+			return item
 		end
 	end
 	return nil
 end
 
 local function getMeleeSweepComponent(weapon)
-	-- try the various ways of getting the sweep component
+	local pawn = uevrUtils.get_local_pawn()
 	local sweep = uevrUtils.getValid(pawn, {"BPC_Player_MeleeSweep"})
 	if sweep ~= nil then return sweep end
 	sweep = uevrUtils.getValid(weapon, {"CurrentMeleeSweep"})
@@ -88,12 +81,12 @@ local function getMeleeSweepComponent(weapon)
 	return sweep
 end
 
-local function getWeaponMesh()
+local function getWeaponMesh(hand)
 	local pawn = uevrUtils.get_local_pawn()
 	if pawn == nil then return nil end
 	local proxy = pawn.BPC_Player_WeaponProxy
 	if proxy == nil or proxy.GetChildActorForHand == nil then return nil end
-	local childComp = proxy:GetChildActorForHand(0)
+	local childComp = proxy:GetChildActorForHand(weaponHandIndex(hand))
 	local weaponActor = childComp and childComp.ChildActor
 	if weaponActor == nil then return nil end
 	return weaponActor.WeaponMesh or weaponActor.SkeletalMesh
@@ -109,22 +102,24 @@ local function endVrMeleeSweep()
 	stopMutedAttackMontage()
 	if status.vrMeleeUsedRequestBegin and isMeleeItemActor(weapon) then
 ---@diagnostic disable-next-line: need-check-nil
-		weapon:OnEndRequestedState(EMeleeItemState.StandardAttack)
+		weapon:OnEndRequestedState(status.vrMeleeAttackState or EMeleeItemState.StandardAttack)
 	end
 	if isMeleeItemActor(weapon) then
 		weapon.ActiveState = EMeleeItemState.Idle
 	end
 	status.vrMeleeSweep = nil
 	status.vrMeleeWeapon = nil
+	status.vrMeleeHand = nil
 	status.vrMeleeSweepActive = false
 	status.vrMeleeUsedRequestBegin = nil
+	status.vrMeleeAttackState = nil
 end
 
-local function beginVrMeleeSweep()
-	local gripMesh = getWeaponMesh()
+local function beginVrMeleeSweep(heavy, hand)
+	local gripMesh = getWeaponMesh(hand)
 	if uevrUtils.getValid(gripMesh) == nil then return false end
 
-	local weapon = getMainhandItemActor()
+	local weapon = getMeleeItemActor(hand)
 	if not isMeleeItemActor(weapon) then
 ---@diagnostic disable-next-line: need-check-nil
 		local owner = gripMesh:GetOwner()
@@ -139,6 +134,7 @@ local function beginVrMeleeSweep()
 
 	status.vrMeleeSweep = sweep
 	status.vrMeleeWeapon = weapon
+	status.vrMeleeHand = hand
 	status.vrMeleeSweepActive = true
 	status.vrMeleeUsedRequestBegin = false
 	status.vrMeleeMutedMontage = nil
@@ -146,9 +142,18 @@ local function beginVrMeleeSweep()
 	sweep:SetLinkedWeapon(gripMesh)
 	sweep:ClearPreviouslyHitComponents()
 
-	---@diagnostic disable-next-line: need-check-nil
-	local began = weapon:RequestBeginStandardAttack() == true
-	status.vrMeleeUsedRequestBegin = began
+---@diagnostic disable-next-line: need-check-nil
+	if heavy and weapon.HeavyAttack ~= nil then
+---@diagnostic disable-next-line: need-check-nil
+		weapon:HeavyAttack(false)
+		status.vrMeleeUsedRequestBegin = true
+		status.vrMeleeAttackState = EMeleeItemState.HeavyAttack
+	else
+---@diagnostic disable-next-line: need-check-nil
+		local began = weapon:RequestBeginStandardAttack() == true
+		status.vrMeleeUsedRequestBegin = began
+		status.vrMeleeAttackState = EMeleeItemState.StandardAttack
+	end
 
 	sweep:SetSweepActive(true)
 	return true
@@ -171,24 +176,40 @@ hook_function("Class /Script/Engine.AnimInstance", "Montage_Play", true,
 	false
 )
 
-local function animateMelee(direction)
-	if status.isMeleeWeapon ~= true then return end
-	input.setAimMethod(input.AimMethod.RIGHT_WEAPON)
-	input.setAimRotationOffset(attachments.getActiveAttachmentMeleeRotationOffset(Handed.Right))
+local function animateMelee(hand)
+	if getMeleeItemActor(hand) == nil then return end
+	local heavy = hand == Handed.Left and status.leftTriggerHeld or status.rightTriggerHeld
+	if hand == Handed.Left then
+		input.setAimMethod(input.AimMethod.LEFT_WEAPON)
+	else
+		input.setAimMethod(input.AimMethod.RIGHT_WEAPON)
+	end
+	input.setAimRotationOffset(attachments.getActiveAttachmentMeleeRotationOffset(hand))
 
 	if status.vrMeleeSweepActive then
 		endVrMeleeSweep()
 	end
-	beginVrMeleeSweep()
+	beginVrMeleeSweep(heavy, hand)
 	uevrUtils.updateDeferral("vr_melee_sweep")
 end
 
-gestures.registerSwipeRightCallback(function()
-	animateMelee(1)
+uevrUtils.registerOnPreInputGetStateCallback(function(retval, user_index, state)
+	status.rightTriggerHeld = state.Gamepad.bRightTrigger > RIGHT_TRIGGER_HEAVY_THRESHOLD
+	status.leftTriggerHeld = state.Gamepad.bLeftTrigger > RIGHT_TRIGGER_HEAVY_THRESHOLD
+	if getMeleeItemActor(Handed.Right) ~= nil then
+		state.Gamepad.bRightTrigger = 0
+	end
+	if getMeleeItemActor(Handed.Left) ~= nil then
+		state.Gamepad.bLeftTrigger = 0
+	end
+end, -1)
+
+gestures.registerSwipeRightCallback(function(strength, hand)
+	animateMelee(hand or Handed.Right)
 end)
 
-gestures.registerSwipeLeftCallback(function()
-	animateMelee(0)
+gestures.registerSwipeLeftCallback(function(strength, hand)
+	animateMelee(hand or Handed.Right)
 end)
 
 ---------------------------------------------------------------------------
@@ -199,8 +220,18 @@ local MELEE_THROW_TRACE_DISTANCE = 10000.0
 local MELEE_THROW_MIN_HIT_DISTANCE = 10.0
 -- local meleeThrowAimActive = false
 
-local function getMeleeThrowAimLocationRotation()
-	local location, rotation = attachments.getActiveAttachmentTransforms(Handed.Right)
+local function getHandForMeleeItem(item)
+	if uevrUtils.getValid(item) == nil then return Handed.Right end
+	for _, hand in ipairs({Handed.Right, Handed.Left}) do
+		if getMeleeItemActor(hand) == item then
+			return hand
+		end
+	end
+	return Handed.Right
+end
+
+local function getMeleeThrowAimLocationRotation(hand)
+	local location, rotation = attachments.getActiveAttachmentTransforms(hand)
 	if location == nil or rotation == nil then
 		return nil, nil
 	end
@@ -233,8 +264,8 @@ local function getMeleeThrowTargetLocation(spawnLoc, aimRot)
 	)
 end
 
-local function buildMeleeThrowAimData()
-	local spawnLoc, aimRot = getMeleeThrowAimLocationRotation()
+local function buildMeleeThrowAimData(hand)
+	local spawnLoc, aimRot = getMeleeThrowAimLocationRotation(hand)
 	if spawnLoc == nil or aimRot == nil then
 		return nil
 	end
@@ -258,7 +289,7 @@ local function applyMeleeThrowAimToThrowItem(locals)
 		return
 	end
 
-	local data = buildMeleeThrowAimData()
+	local data = buildMeleeThrowAimData(getHandForMeleeItem(locals.Item))
 	if data == nil then
 		return
 	end

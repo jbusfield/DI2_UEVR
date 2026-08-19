@@ -333,7 +333,7 @@ function M.addAttachmentOffsetsToConfigUI(configDefinition, m_attachmentOffsets)
 		table.insert(configDefinition[1]["layout"],
 					{
 						id = widgetPrefix .. name .. "_scale", label = "Scale",
-						widgetType = "drag_float3", speed = .1, range = {0.01, 10}, initialValue = scale
+						widgetType = "drag_float3", speed = .1, range = {-10, 10}, initialValue = scale
 					}
 		)
 		table.insert(configDefinition[1]["layout"],

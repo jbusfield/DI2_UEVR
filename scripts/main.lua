@@ -25,6 +25,15 @@ local portables = require("helpers/portables")
 local dev = require('libs/uevr_dev')
 dev.init()
 
+-- TODO: 
+-- Done - Heavy attack
+-- Alternate immersion modes
+-- Done - Better handling of claws, knuckles including animations
+-- Should heavy attack with claws use left trigger for left hand or will left trigger break something?
+-- Cooldowns for weighted weapons
+-- Investigate rendering issues
+
+
 uevrUtils.setLogLevel(LogLevel.Debug)
 -- reticule.setLogLevel(LogLevel.Debug)
 -- input.setLogLevel(LogLevel.Debug)
@@ -37,7 +46,7 @@ attachments.setLogLevel(LogLevel.Debug)
 -- ik.setLogLevel(LogLevel.Debug)
 
 uevrUtils.setDeveloperMode(true)
---hands.enableConfigurationTool()
+hands.enableConfigurationTool()
 --uevrUtils.profiler:toggle(true)
 
 
@@ -240,19 +249,8 @@ end
 local function getWeaponMesh()
     local pawn = uevrUtils.get_local_pawn()
     if not pawn then
-        return
+        return nil, nil
     end
-    --alternates
-    -- UWeaponUtils::GetCurrentItemFromPlayerWeaponProxy
-    -- -- returns AItemActor* for that hand
-    -- local pawn = uevrUtils.get_local_pawn()
-    --local proxy = pawn.BPC_Player_WeaponProxy  -- UWeaponProxyComponent
-    -- local WeaponUtils = uevrUtils.find_default_instance("Class /Script/DeadIsland.WeaponUtils")
-    -- local item = WeaponUtils:GetCurrentItemFromPlayerWeaponProxy(proxy, 0) -- EWeaponHand.Mainhand = 0
-    -- -- Offhand = 1
-
-	-- local weaponUtils = uevrUtils.find_default_instance("Class /Script/DeadIsland.WeaponUtils")
-	-- local item = weaponUtils:GetCurrentItemFromPlayerWeaponProxy(pawn.BPC_Player_WeaponProxy, 0)
 
 	--ranged weapons
 	local paperDoll = pawn.BPC_Player_PaperDoll
@@ -261,22 +259,36 @@ local function getWeaponMesh()
 		local modules = item.RangedWeaponModulesComponent
 		local visual = modules and modules.GetOwnerVisualActor and modules:GetOwnerVisualActor()
 		if uevrUtils.getValid(visual) ~= nil then
-			if visual.WeaponMesh ~= nil then return visual.WeaponMesh end
-			if visual.SkeletalMesh ~= nil then return visual.SkeletalMesh end
+			if visual.WeaponMesh ~= nil then return visual.WeaponMesh, nil end
+			if visual.SkeletalMesh ~= nil then return visual.SkeletalMesh, nil end
 		end
 	end
 
 	--melee weapons
     local proxy = pawn.BPC_Player_WeaponProxy  -- UWeaponProxyComponent
-    local childComp = proxy:GetChildActorForHand(0) -- ChildActorComponent
-    local weaponActor = childComp and childComp.ChildActor
-	if weaponActor then
-		local mesh = weaponActor.WeaponMesh
-		if mesh then return mesh end
-		mesh = weaponActor.SkeletalMesh
-		if mesh then return mesh end
+    local rightChildComp = proxy:GetChildActorForHand(0) -- ChildActorComponent
+    local rightWeaponActor = rightChildComp and rightChildComp.ChildActor
+	local rightMesh = nil
+	if rightWeaponActor then
+		local mesh = rightWeaponActor.WeaponMesh
+		if mesh then
+			rightMesh = mesh
+		else
+			rightMesh = rightWeaponActor.SkeletalMesh
+		end
 	end
-	return nil
+	local leftChildComp = proxy:GetChildActorForHand(1) -- ChildActorComponent
+    local leftWeaponActor = leftChildComp and leftChildComp.ChildActor
+	local leftMesh = nil
+	if leftWeaponActor then
+		local mesh = leftWeaponActor.WeaponMesh
+		if mesh then
+			leftMesh = mesh
+		else
+			leftMesh = leftWeaponActor.SkeletalMesh
+		end
+	end
+	return rightMesh, leftMesh
 end
 
 ----------------- Ranged weapon Aim fix -------------------------------------------
@@ -328,7 +340,7 @@ local function applyRangedWeaponMuzzleAim()
 end
 
 local function setEquippedWeaponHidden(hidden)
-	local mesh = getWeaponMesh()
+	local mesh, _ = getWeaponMesh()
 	if uevrUtils.getValid(mesh) == nil or mesh == nil then
 		return
 	end
@@ -378,12 +390,18 @@ attachments.registerOnGripUpdateCallback(function()
 		setEquippedWeaponHidden(true)
 		return
 	end
-	local portableMesh = portables.getPortableMesh()
-	local gripMesh = portableMesh or getWeaponMesh()
-	local attachOptions = portableMesh ~= nil and portables.attachOptions or defaultAttachOptions
+
+	local attachOptions = portables.attachOptions
+	local rightGripMesh = portables.getPortableMesh()
+	local leftGripMesh = nil
+	if rightGripMesh == nil then
+		rightGripMesh, leftGripMesh = getWeaponMesh()
+		attachOptions = defaultAttachOptions
+	end
 	local rightHandComponent, leftHandComponent = getHandComponents()
 	local rightSocket = "weapon_01_rSocket" -- "Hand_R"
-	return rightHandComponent and gripMesh, rightHandComponent, rightSocket, nil, nil, nil, attachOptions
+	local leftSocket = "weapon_01_lSocket" -- "Hand_L"
+	return rightHandComponent and rightGripMesh, rightHandComponent, rightSocket, leftHandComponent and leftGripMesh, leftHandComponent, leftSocket, attachOptions
 end)
 
 attachments.registerAttachmentChangeCallback(function(id, gripHand, attachment)
@@ -397,8 +415,8 @@ attachments.registerAttachmentChangeCallback(function(id, gripHand, attachment)
 		attachment:SetCollisionResponseToChannel(5, ECollisionResponse.Block)
 		attachment:SetCollisionResponseToChannel(15, ECollisionResponse.Block)
 	end
-	gestures.autoDetectGesture(gestures.Gesture.SWIPE_RIGHT, isMeleeWeapon)
-	gestures.autoDetectGesture(gestures.Gesture.SWIPE_LEFT, isMeleeWeapon)
+	gestures.autoDetectGesture(gestures.Gesture.SWIPE_RIGHT, isMeleeWeapon, gripHand)
+	gestures.autoDetectGesture(gestures.Gesture.SWIPE_LEFT, isMeleeWeapon, gripHand)
 end)
 
 ---------------------------------------------------------------------------
