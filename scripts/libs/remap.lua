@@ -49,19 +49,6 @@ Usage:
         example:
             local currentConfig = remap.getRemapParameters()
 
-    remap.loadParameters(fileName) - loads remap configuration from a file
-        example:
-            remap.loadParameters("my_remap_config")
-
-    remap.showDeveloperConfiguration() - creates and shows developer configuration UI
-        example:
-            remap.showDeveloperConfiguration()
-
-    remap.addRemapConfigToUI(configDefinition, remapConfig) - adds remap configuration to an existing UI definition
-        example:
-            local configDef = getMyConfigDefinition()
-            remap.addRemapConfigToUI(configDef)
-
     remap.addNewInputMapping(inputName) - adds a new input mapping to the configuration
         example:
             remap.addNewInputMapping("right_trigger")
@@ -89,6 +76,19 @@ Usage:
     remap.print(text, logLevel) - prints a message with the specified log level
         example:
             remap.print("Remapping applied", LogLevel.Info)
+
+    remap.loadParameters(fileName) - loads remap configuration from a file
+        example:
+            remap.loadParameters("my_remap_config")
+
+    remap.showDeveloperConfiguration() - creates and shows developer configuration UI
+        example:
+            remap.showDeveloperConfiguration()
+
+    remap.addRemapConfigToUI(configDefinition, remapConfig) - adds remap configuration to an existing UI definition
+        example:
+            local configDef = getMyConfigDefinition()
+            remap.addRemapConfigToUI(configDef)
 
 ]]--
 
@@ -404,6 +404,7 @@ local function compileActionExecutors(actionsTable, inputName, mapping)
 end
 
 local function setDirectionalActionUIValues(inputName, stateKey, stateConfig, direction)
+    stateConfig = stateConfig or {}
     local actionsTable = stateConfig.actions
     if direction == "positive" then
         actionsTable = stateConfig.positive_actions or stateConfig.actions
@@ -412,36 +413,118 @@ local function setDirectionalActionUIValues(inputName, stateKey, stateConfig, di
     end
 
     local idSuffix = direction and ("_" .. direction) or ""
+    local hasConfiguredActions = false
 
     for _, actionName in ipairs(allActions) do
         if actionName ~= inputName then
             local currentActionStateIndex = 1
+            local actionConfig = actionsTable and actionsTable[actionName]
+            local actionMapping = inputMapping[actionName]
+            local selectedState = M.ActionState.NONE
 
-            if actionsTable and actionsTable[actionName] then
-                local actionConfig = actionsTable[actionName]
-                if actionConfig and actionConfig.state then
-                    local actionMapping = inputMapping[actionName]
-                    local valueArray = actionStateValues
-                    if actionMapping then
-                        if actionMapping.type == "button" then
-                            valueArray = buttonActionStateValues
-                        elseif actionMapping.type == "trigger" then
-                            valueArray = triggerActionStateValues
-                        elseif actionMapping.type == "analog" then
-                            valueArray = analogActionStateValues
-                        end
+            if actionConfig and actionConfig.state then
+                selectedState = actionConfig.state
+                local valueArray = actionStateValues
+                if actionMapping then
+                    if actionMapping.type == "button" then
+                        valueArray = buttonActionStateValues
+                    elseif actionMapping.type == "trigger" then
+                        valueArray = triggerActionStateValues
+                    elseif actionMapping.type == "analog" then
+                        valueArray = analogActionStateValues
                     end
+                end
 
-                    for i, value in ipairs(valueArray) do
-                        if actionConfig.state == value then
-                            currentActionStateIndex = i
-                            break
-                        end
+                for i, value in ipairs(valueArray) do
+                    if actionConfig.state == value then
+                        currentActionStateIndex = i
+                        break
+                    end
+                end
+
+                if selectedState ~= M.ActionState.NONE then
+                    hasConfiguredActions = true
+                end
+            end
+
+            configui.setValue("remap_" .. inputName .. "_" .. stateKey .. idSuffix .. "_action_" .. actionName .. "_state", currentActionStateIndex, true)
+
+            if actionMapping and (actionMapping.type == "trigger" or actionMapping.type == "analog") then
+                local defaultValue = actionMapping.type == "trigger" and CONSTANTS.TRIGGER_MAX or CONSTANTS.ANALOG_MAX
+                local currentValue = actionConfig and actionConfig.value or defaultValue
+                configui.setValue("remap_" .. inputName .. "_" .. stateKey .. idSuffix .. "_action_" .. actionName .. "_value", tostring(currentValue), true)
+                local shouldHide = (selectedState == M.ActionState.NONE or selectedState == M.ActionState.COPY_VALUE)
+                configui.hideWidget("remap_" .. inputName .. "_" .. stateKey .. idSuffix .. "_action_" .. actionName .. "_value_group", shouldHide)
+            end
+        end
+    end
+
+    if hasConfiguredActions then
+        configui.setColor("remap_" .. inputName .. "_" .. stateKey .. idSuffix .. "_actions", "#0088FFFF")
+    else
+        configui.setColor("remap_" .. inputName .. "_" .. stateKey .. idSuffix .. "_actions", nil)
+    end
+end
+
+-- Sync all remap UI widgets to the current editing profile.
+-- configui.update/load can leave prior-profile values in place; this always overrides them.
+local function applyCurrentProfileToUI()
+    local profile = currentEditingProfile or "default"
+
+    for _, inputName in ipairs(inputOrder) do
+        local mapping = inputMapping[inputName]
+        if mapping then
+            local currentConfigArray = parameters[profile] and parameters[profile][inputName]
+            local configuredStates = {}
+            local stateConfigs = {}
+
+            if currentConfigArray then
+                local configs = currentConfigArray
+                if not configs[1] then
+                    configs = {configs}
+                end
+
+                for _, config in ipairs(configs) do
+                    if config.state then
+                        configuredStates[config.state] = true
+                        stateConfigs[config.state] = config
                     end
                 end
             end
 
-            configui.setValue("remap_" .. inputName .. "_" .. stateKey .. idSuffix .. "_action_" .. actionName .. "_state", currentActionStateIndex)
+            if next(configuredStates) ~= nil then
+                configui.setColor("remap_" .. inputName, "#0088FFFF")
+            else
+                configui.setColor("remap_" .. inputName, nil)
+            end
+
+            local onConfig = stateConfigs[M.InputState.ON]
+            if mapping.type == "trigger" then
+                configui.setValue("remap_" .. inputName .. "_threshold", (onConfig and onConfig.threshold) or CONSTANTS.DEFAULT_TRIGGER_THRESHOLD, true)
+            elseif mapping.type == "analog" then
+                configui.setValue("remap_" .. inputName .. "_positive_threshold", getAnalogPositiveThreshold(onConfig), true)
+                configui.setValue("remap_" .. inputName .. "_negative_threshold", getAnalogNegativeThreshold(onConfig), true)
+            end
+
+            for _, inputState in ipairs(inputStates) do
+                local stateKey = inputState.key
+                local hasStateConfig = configuredStates[stateKey] or false
+                local stateConfig = stateConfigs[stateKey]
+
+                configui.setValue("remap_" .. inputName .. "_" .. stateKey, hasStateConfig, true)
+                configui.hideWidget("remap_" .. inputName .. "_" .. stateKey .. "_group", not hasStateConfig)
+
+                if stateKey == M.InputState.ON or stateKey == M.InputState.TOGGLE_ON then
+                    configui.setValue("remap_" .. inputName .. "_" .. stateKey .. "_unpress", (stateConfig and stateConfig.unpress) == true, true)
+                end
+
+                if mapping.type == "analog" and stateKey == M.InputState.ON then
+                    setDirectionalActionUIValues(inputName, stateKey, stateConfig, "positive")
+                    setDirectionalActionUIValues(inputName, stateKey, stateConfig, "negative")
+                else
+                    setDirectionalActionUIValues(inputName, stateKey, stateConfig, nil)
+                end
+            end
         end
     end
 end
@@ -449,6 +532,7 @@ end
 -- Pre-compile the remap configuration for optimal performance
 local function compileRemapConfig(remapConfig)
     compiledInputs = {}
+    remapConfig = remapConfig or {}
 
     for inputName, configs in pairs(remapConfig) do
         local mapping = inputMapping[inputName]
@@ -1201,27 +1285,28 @@ function M.registerUICallbacks()
     end)
 
     configui.onUpdate("remap_new_profile", function()
-        -- Generate human-readable profile name
+        local newId = uevrUtils.guid()
         local profileList = M.getProfileList()
         local profileNumber = #profileList + 1
-        local newId = "profile_" .. profileNumber
         local newLabel = "Profile " .. profileNumber
-        
-        -- Ensure unique ID
-        while parameters[newId] do
+
+        local existingLabels = {}
+        for _, profileId in ipairs(profileList) do
+            existingLabels[M.getProfileLabel(profileId)] = true
+        end
+        while existingLabels[newLabel] do
             profileNumber = profileNumber + 1
-            newId = "profile_" .. profileNumber
             newLabel = "Profile " .. profileNumber
         end
-        
+
         if M.createNewProfile(newId) then
             M.setProfileLabel(newId, newLabel)
             currentEditingProfile = newId
-            
+
             -- Update combo box options to include the new profile
             local profileLabels = M.getProfileLabels()
             configui.setSelections("remap_active_profile", profileLabels)
-            
+
             -- Find the index of the new profile and select it
             local profileList = M.getProfileList()
             local newProfileIndex = 1
@@ -1231,7 +1316,7 @@ function M.registerUICallbacks()
                     break
                 end
             end
-            
+
             -- Set the combo to the new profile and refresh UI
             configui.setValue("remap_active_profile", newProfileIndex)
             M.refreshUI()
@@ -1240,27 +1325,27 @@ function M.registerUICallbacks()
 
     configui.onUpdate("remap_duplicate_profile", function()
         local currentLabel = M.getProfileLabel(currentEditingProfile)
-        local baseNewId = currentEditingProfile .. "_copy"
-        local baseNewLabel = currentLabel .. " Copy"
-        
-        local newId = baseNewId
-        local newLabel = baseNewLabel
+        local newId = uevrUtils.guid()
+        local newLabel = currentLabel .. " Copy"
         local counter = 1
-        
-        while parameters[newId] do
+
+        local existingLabels = {}
+        for _, profileId in ipairs(M.getProfileList()) do
+            existingLabels[M.getProfileLabel(profileId)] = true
+        end
+        while existingLabels[newLabel] do
             counter = counter + 1
-            newId = currentEditingProfile .. "_copy_" .. counter
             newLabel = currentLabel .. " Copy " .. counter
         end
-        
+
         if M.duplicateProfile(currentEditingProfile, newId) then
             M.setProfileLabel(newId, newLabel)
             currentEditingProfile = newId
-            
+
             -- Update combo box options to include the new profile
             local profileLabels = M.getProfileLabels()
             configui.setSelections("remap_active_profile", profileLabels)
-            
+
             -- Find the index of the new profile and select it
             local profileList = M.getProfileList()
             local newProfileIndex = 1
@@ -1270,7 +1355,7 @@ function M.registerUICallbacks()
                     break
                 end
             end
-            
+
             -- Set the combo to the new profile and refresh UI
             configui.setValue("remap_active_profile", newProfileIndex)
             M.refreshUI()
@@ -1693,7 +1778,7 @@ function M.refreshUI()
         configui.update(configDefinition)
 
         -- After updating the UI definition, explicitly set the values for all checkboxes and combos
-        -- since configui.update() might not properly handle initialValue changes
+        -- since configui.update() reloads saved widget state that can belong to another profile
         
         -- Set the profile combo to the correct value
         local profileList = M.getProfileList()
@@ -1705,54 +1790,7 @@ function M.refreshUI()
             end
         end
         configui.setValue("remap_active_profile", currentProfileIndex)
-        
-        for _, inputName in ipairs(inputOrder) do
-            local profile = currentEditingProfile or "default"
-            local currentConfigArray = parameters[profile] and parameters[profile][inputName]
-
-            -- Determine which states are currently configured (state-agnostic)
-            local configuredStates = {}
-            local stateConfigs = {}
-
-            if currentConfigArray then
-                local configs = currentConfigArray
-                if not configs[1] then
-                    -- Legacy format: convert to array for checking
-                    configs = {configs}
-                end
-
-                for _, config in ipairs(configs) do
-                    if config.state then
-                        configuredStates[config.state] = true
-                        stateConfigs[config.state] = config
-                    end
-                end
-            end
-
-            -- Set checkbox values for each possible state
-            for _, inputState in ipairs(inputStates) do
-                local stateKey = inputState.key
-                local hasStateConfig = configuredStates[stateKey] or false
-                configui.setValue("remap_" .. inputName .. "_" .. stateKey, hasStateConfig)
-            end
-
-            -- Set action state combo values for each configured state
-            for _, inputState in ipairs(inputStates) do
-                local stateKey = inputState.key
-                local hasStateConfig = configuredStates[stateKey]
-                local stateConfig = stateConfigs[stateKey]
-
-                if hasStateConfig and stateConfig then
-                    local mapping = inputMapping[inputName]
-                    if mapping and mapping.type == "analog" and stateKey == M.InputState.ON then
-                        setDirectionalActionUIValues(inputName, stateKey, stateConfig, "positive")
-                        setDirectionalActionUIValues(inputName, stateKey, stateConfig, "negative")
-                    else
-                        setDirectionalActionUIValues(inputName, stateKey, stateConfig, nil)
-                    end
-                end
-            end
-        end
+        applyCurrentProfileToUI()
 
         isRefreshing = false  -- Clear flag after refresh is complete
     end
@@ -2069,6 +2107,31 @@ function M.loadParameters(fileName)
     end
 
     parameters = loadedParams
+
+    local systemKeys = {
+        ["saveFile"] = true,
+        ["panelLabel"] = true,
+        ["layout"] = true,
+        ["_profileState"] = true,
+        ["_profileLabels"] = true,
+    }
+
+    -- Empty profiles may be stored as JSON null; normalize those to {} so they remain
+    -- selectable and apply as "no remaps"
+    if type(parameters._profileLabels) == "table" then
+        for profileId, _ in pairs(parameters._profileLabels) do
+            if type(parameters[profileId]) ~= "table" then
+                parameters[profileId] = {}
+                isParametersDirty = true
+            end
+        end
+    end
+    for key, value in pairs(parameters) do
+        if not systemKeys[key] and type(value) ~= "table" then
+            parameters[key] = {}
+            isParametersDirty = true
+        end
+    end
     
     -- Restore profile state if it exists
     if parameters._profileState then
@@ -2081,7 +2144,7 @@ function M.loadParameters(fileName)
     local availableProfiles = M.getProfileList()
     
     -- Validate currentEditingProfile
-    if not currentEditingProfile or not parameters[currentEditingProfile] then
+    if not currentEditingProfile or type(parameters[currentEditingProfile]) ~= "table" then
         if #availableProfiles > 0 then
             currentEditingProfile = availableProfiles[1]  -- Use first available profile
         else
@@ -2140,6 +2203,8 @@ function M.loadParameters(fileName)
             end
         end
     end
+
+    compiledRemapConfig = nil
 end
 
 local function saveParameters()
@@ -2178,62 +2243,11 @@ function M.showDeveloperConfiguration()
     M.registerUICallbacks()  -- Register callbacks only once
     configui.create(configDefinition)
 
-    -- After creating the UI, explicitly set the values for all checkboxes
-    -- to ensure they display the correct initial state
-    for _, inputName in ipairs(inputOrder) do
-        local currentConfigArray = parameters[profile] and parameters[profile][inputName]
-
-        -- Determine which states are currently configured (state-agnostic)
-        local configuredStates = {}
-        local stateConfigs = {}
-
-        if currentConfigArray then
-            local configs = currentConfigArray
-            if not configs[1] then
-                -- Legacy format: convert to array for checking
-                configs = {configs}
-            end
-
-            for _, config in ipairs(configs) do
-                if config.state then
-                    configuredStates[config.state] = true
-                    stateConfigs[config.state] = config
-                end
-            end
-        end
-
-        -- Set checkbox values for each possible state
-        for _, inputState in ipairs(inputStates) do
-            local stateKey = inputState.key
-            local hasStateConfig = configuredStates[stateKey] or false
-            configui.setValue("remap_" .. inputName .. "_" .. stateKey, hasStateConfig)
-        end
-        if currentConfigArray then
-            local configs = currentConfigArray
-            if not configs[1] then
-                -- Legacy format: convert to array for checking
-                configs = {configs}
-            end
-
-        end
-
-        -- Set action state combo values for each configured state
-        for _, inputState in ipairs(inputStates) do
-            local stateKey = inputState.key
-            local hasStateConfig = configuredStates[stateKey]
-            local stateConfig = stateConfigs[stateKey]
-
-            if hasStateConfig and stateConfig then
-                local mapping = inputMapping[inputName]
-                if mapping and mapping.type == "analog" and stateKey == M.InputState.ON then
-                    setDirectionalActionUIValues(inputName, stateKey, stateConfig, "positive")
-                    setDirectionalActionUIValues(inputName, stateKey, stateConfig, "negative")
-                else
-                    setDirectionalActionUIValues(inputName, stateKey, stateConfig, nil)
-                end
-            end
-        end
-    end
+    -- After creating the UI, explicitly sync values from the active profile.
+    -- configui.create/load can restore prior widget state from the save file.
+    isRefreshing = true
+    applyCurrentProfileToUI()
+    isRefreshing = false
 end
 
 function M.init(isDeveloperMode, logLevel)
@@ -2257,7 +2271,7 @@ end
 -- Separate reusable function to apply parameter-based input remapping
 function M.applyParameterBasedRemapping(state, remapConfig)
     local profile = currentEditingProfile or "default"
-    processInputRemapping(state, remapConfig or parameters[profile])
+    processInputRemapping(state, remapConfig or parameters[profile] or {})
     
     -- Process FKEY actions (stub implementation)
     -- processFKeyActions(state)
@@ -2342,14 +2356,28 @@ end
 function M.setCurrentEditingProfile(profileName)
     M.print("setCurrentEditingProfile called with: " .. (profileName or "nil"), LogLevel.Info)
     M.print("Current profile before switch: " .. currentEditingProfile, LogLevel.Info)
-    
-    if parameters[profileName] then
-        currentEditingProfile = profileName
-        isParametersDirty = true  -- Mark for saving
-        M.print("Successfully switched to profile: " .. profileName, LogLevel.Info)
-    else
-        M.print("Profile not found: " .. profileName .. ", keeping current: " .. currentEditingProfile, LogLevel.Warning)
+
+    if profileName == nil or profileName == "" then
+        M.print("Profile name cannot be empty, keeping current: " .. currentEditingProfile, LogLevel.Warning)
+        return false
     end
+
+    -- Empty profiles (JSON null / {}) are valid "no remaps" profiles
+    if type(parameters[profileName]) ~= "table" then
+        if parameters._profileLabels and parameters._profileLabels[profileName] then
+            parameters[profileName] = {}
+            isParametersDirty = true
+        else
+            M.print("Profile not found: " .. profileName .. ", keeping current: " .. currentEditingProfile, LogLevel.Warning)
+            return false
+        end
+    end
+
+    currentEditingProfile = profileName
+    compiledRemapConfig = nil
+    isParametersDirty = true
+    M.print("Successfully switched to profile: " .. profileName, LogLevel.Info)
+    return true
 end
 
 function M.createNewProfile(profileName)
@@ -2358,7 +2386,7 @@ function M.createNewProfile(profileName)
         return false
     end
     
-    if parameters[profileName] then
+    if type(parameters[profileName]) == "table" then
         M.print("Profile already exists: " .. profileName, LogLevel.Warning)
         return false
     end
@@ -2507,10 +2535,34 @@ end
 uevrUtils.registerOnPreInputGetStateCallback(function(retval, user_index, state)
     updateIsDisabled()
     if not isDisabled then
-        processInputRemapping(state, parameters[currentEditingProfile])
+        processInputRemapping(state, parameters[currentEditingProfile] or {})
     end
 end)
 
+function M.setCurrentProfile(profileID)
+	if M.setCurrentEditingProfile(profileID) then
+		M.refreshUI()
+	end
+end
+
+function M.setCurrentProfileByLabel(profileLabel)
+	if parameters._profileLabels then
+		for profileId, label in pairs(parameters._profileLabels) do
+			if label == profileLabel then
+				M.setCurrentProfile(profileId)
+				return
+			end
+		end
+	end
+
+	local profileList = M.getProfileList()
+	for _, profileId in ipairs(profileList) do
+		if M.getProfileLabel(profileId) == profileLabel then
+			M.setCurrentProfile(profileId)
+			return
+		end
+	end
+end
 
 M.loadParameters()
 

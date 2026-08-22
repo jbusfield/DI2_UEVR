@@ -479,7 +479,7 @@ function Laser:setRelativePosition(pos)
 end
 function Laser:setRelativeRotation(rot)
     local c = uevrUtils.getValid(self.attachmentComponent)
-    if c ~= nil then
+    if c ~= nil and c.RelativeRotation ~= nil then
         c.RelativeRotation = rot
     end
 end

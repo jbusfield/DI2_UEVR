@@ -1,7 +1,6 @@
 local uevrUtils = require('libs/uevr_utils')
 local mathLib = require('libs/core/math_lib')
 local montage = require('libs/montage')
-local gestures = require('libs/gestures')
 local input = require('libs/input')
 local attachments = require('libs/attachments')
 
@@ -196,19 +195,18 @@ end
 uevrUtils.registerOnPreInputGetStateCallback(function(retval, user_index, state)
 	status.rightTriggerHeld = state.Gamepad.bRightTrigger > RIGHT_TRIGGER_HEAVY_THRESHOLD
 	status.leftTriggerHeld = state.Gamepad.bLeftTrigger > RIGHT_TRIGGER_HEAVY_THRESHOLD
-	if getMeleeItemActor(Handed.Right) ~= nil then
+	-- Block vanilla RT heavy while melee is equipped, but leave RT alone during LT throw aim.
+	if getMeleeItemActor(Handed.Right) ~= nil and not status.leftTriggerHeld then
 		state.Gamepad.bRightTrigger = 0
-	end
-	if getMeleeItemActor(Handed.Left) ~= nil then
-		state.Gamepad.bLeftTrigger = 0
 	end
 end, -1)
 
-gestures.registerSwipeRightCallback(function(strength, hand)
+-- Listen only; main.lua enables swipe autodetection while a melee weapon is gripped.
+uevrUtils.registerUEVRCallback("on_gesture_swipe_right", function(strength, hand)
 	animateMelee(hand or Handed.Right)
 end)
 
-gestures.registerSwipeLeftCallback(function(strength, hand)
+uevrUtils.registerUEVRCallback("on_gesture_swipe_left", function(strength, hand)
 	animateMelee(hand or Handed.Right)
 end)
 

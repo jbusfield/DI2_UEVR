@@ -1587,8 +1587,21 @@ local function updateGamePaused()
 	end
 end
 
+local characterHiddenStatus = {}
 local function updateCharacterHidden()
 	if on_character_hidden ~= nil or hasUEVRCallbacks("on_character_hidden") then --don't bother doing anything if nothing is listening
+		if characterHiddenStatus.isCharacterHiddenOverride ~= nil then
+			local m_isHidden = characterHiddenStatus.isCharacterHiddenOverride == true
+			if isCharacterHidden ~= m_isHidden then
+---@diagnostic disable-next-line: cast-local-type
+				isCharacterHidden = m_isHidden
+				if on_character_hidden ~= nil then
+					on_character_hidden(isCharacterHidden)
+				end
+				executeUEVRCallbacks("on_character_hidden", isCharacterHidden)
+			end
+			return
+		end
 		local controller = M.getValid(pawn, {"Controller"})
 		local m_isHidden = controller == nil -- if thees no controller then the character is hidden
 		if m_isHidden == false then -- if the controller is not hidden then check the character
@@ -1609,6 +1622,9 @@ local cutsceneStatus = {}
 --local isInCutsceneOverride = nil
 function M.setIsInCutsceneOverride(override)
 	cutsceneStatus.isInCutsceneOverride = override
+end
+function M.setIsCharacterHiddenOverride(override)
+	characterHiddenStatus.isCharacterHiddenOverride = override
 end
 function M.setCutsceneDetectionOptions(options)
 	cutsceneStatus.useTargetIsCine = options.useTargetIsCine
@@ -3263,8 +3279,10 @@ local fadeSoftLock = false
 function M.isFadeHardLocked()
 	return fadeHardLock
 end
-function M.fadeCamera(rate, hardLock, softLock, overrideHardLock, overrideSoftLock)
+function M.fadeCamera(rate, hardLock, softLock, overrideHardLock, overrideSoftLock, alpha)
 	--print("fadeCamera called", rate, hardLock, softLock, overrideHardLock, overrideSoftLock, fadeHardLock, fadeSoftLock, "\n")
+
+	if alpha == nil then alpha = 1.0 end
 
 	if hardLock == nil then hardLock = false end
 	if softLock == nil then softLock = false end
@@ -3292,7 +3310,7 @@ function M.fadeCamera(rate, hardLock, softLock, overrideHardLock, overrideSoftLo
 	--print("Camera Manager was",camMan:get_full_name(),"\n")
 	if uevr ~= nil and camMan ~= nil and UEVR_UObjectHook.exists(camMan) then
 		--(FromAlpha, ToAlpha, Duration, Color, bShouldFadeAudio, bHoldWhenFinished)
-		camMan:StartCameraFade(0.999, 1.0, rate, color_from_rgba(0.0, 0.0, 0.0, 1.0), false, fadeHardLock)
+		camMan:StartCameraFade(0.999, alpha, rate, color_from_rgba(0.0, 0.0, 0.0, 1.0), false, fadeHardLock)
 
 		--pc:ClientSetCameraFade(bool bEnableFading, _Script_CoreUObject::Color FadeColor, _Script_CoreUObject::Vector2D FadeAlpha, float FadeTime, bool bFadeAudio, bool bHoldWhenFinished)
 		if fadeSoftLock then
