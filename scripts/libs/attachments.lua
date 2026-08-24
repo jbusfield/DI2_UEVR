@@ -1222,7 +1222,7 @@ local function createLaserForAttachment(attachment, gripHand)
 	--subscribeToLineTracer(gripHand)
 	local lengthSettings = {
         type = laser.LengthType.CAMERA,
-        lengthPercentage = 1.0
+        lengthPercentage = 1.7 -- TODO investigate why 1.7 works here
     }
 	--attachmentLasers[gripHand] = laser.new({laserColor = laserColor, lengthSettings = lengthSettings, target = {type = "particle", options = {particleSystemAsset = "ParticleSystem /Game/Art/VFX/ParticleSystems/Weapons/Projectiles/Plasma/PS_Plasma_Ball.PS_Plasma_Ball", scale = {0.04, 0.04, 0.04}, autoActivate = true}}})
 	attachmentLasers[gripHand] = laser.new({laserColor = laserColor, lengthSettings = lengthSettings})

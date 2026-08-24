@@ -13,171 +13,135 @@ local counterSequence = nil
 
 ---------------------------------------------------------------------------
 -- Materials mode: keep body slots, hide arms/gloves/accessories.
--- Match against the object/parent *asset name* only (not the full path — pawn
--- names like Skin_PremiumCosplay would false-keep every MID).
--- Do not keep generic "skin": MI_*Skin is torso/body skin on FP meshes.
+-- Match MIC/MID short names only (not full paths). Do not keep generic "skin".
+-- Refresh always hides every section index. Maintain only re-hides if the
+-- game re-showed a slot. Do not trust IsMaterialSectionShown to pick a cheaper
+-- hide — after skeletal a single-section hide flips that flag while hands stay.
 ---------------------------------------------------------------------------
 local keepList = { "lower", "skinlegs" }
+local maxSectionProbe = 32
 
 local hiddenMaterialIds = {}
 local lastMaterialCount = -1
+local lastMaterialsMesh = nil
 local fpMaterialsHidden = nil
+local cachedFpMaterialsMesh = nil
+local maintainMaterials
 
 local function getMeshFirstPerson()
-	return uevrUtils.getObjectFromDescriptor("Pawn.MeshFirstPerson")
-end
-
-local function getNumMaterials(mesh)
-	if mesh == nil or mesh.GetNumMaterials == nil then return 0 end
-	local ok, n = pcall(function() return mesh:GetNumMaterials() end)
-	return (ok and type(n) == "number") and n or 0
-end
-
-local function getMaterialFullName(mat)
-	if mat == nil then return nil end
-	local ok, full = pcall(function() return mat:get_full_name() end)
-	return (ok and type(full) == "string") and full or nil
-end
-
-local function getMaterialLabel(mat)
-	if mat == nil then return "(nil)" end
-	local label = getMaterialFullName(mat) or tostring(mat)
-	local parent = nil
-	pcall(function() parent = mat.Parent end)
-	if parent == nil and mat.GetBaseMaterial ~= nil then
-		pcall(function() parent = mat:GetBaseMaterial() end)
+	if cachedFpMaterialsMesh ~= nil and uevrUtils.getValid(cachedFpMaterialsMesh) ~= nil then
+		return cachedFpMaterialsMesh
 	end
-	local parentName = getMaterialFullName(parent)
-	if parentName ~= nil then
-		label = label .. " | parent=" .. parentName
-	end
-	return label
-end
-
-local function getObjectAssetName(obj)
-	if obj == nil then return nil end
-	local ok, fname = pcall(function()
-		if obj.get_fname ~= nil then
-			local n = obj:get_fname()
-			if type(n) == "string" then return n end
-			if n ~= nil and n.to_string ~= nil then return n:to_string() end
-		end
-		return nil
-	end)
-	if ok and type(fname) == "string" and fname ~= "" then
-		return string.lower(fname)
-	end
-	local full = getMaterialFullName(obj)
-	if full == nil then return nil end
-	local name = string.match(full, "%.([^%.]+)$") or full
-	return string.lower(name)
-end
-
-local function getMaterialMatchTexts(mat)
-	local texts = {}
-	local function add(obj)
-		if obj == nil then return end
-		local full = getMaterialFullName(obj)
-		if type(full) == "string" and string.find(full, "Material /", 1, true)
-			and not string.find(full, "MaterialInstance", 1, true) then
-			return
-		end
-		local name = getObjectAssetName(obj)
-		if name ~= nil then
-			table.insert(texts, name)
-		end
-	end
-	add(mat)
-	local parent = nil
-	pcall(function() parent = mat.Parent end)
-	add(parent)
-	return texts
+	cachedFpMaterialsMesh = uevrUtils.getObjectFromDescriptor("Pawn.MeshFirstPerson")
+	return cachedFpMaterialsMesh
 end
 
 local function materialShouldKeep(mat)
-	if mat == nil then return false end
-	for _, text in ipairs(getMaterialMatchTexts(mat)) do
-		for _, sub in ipairs(keepList) do
-			if string.find(text, sub, 1, true) then
-				return true
-			end
+	if uevrUtils.getValid(mat) == nil then return false end
+	local function matchesKeep(obj)
+		if uevrUtils.getValid(obj) == nil then return false end
+		local full = obj:get_full_name()
+		if string.find(full, "Material /", 1, true)
+			and not string.find(full, "MaterialInstance", 1, true) then
+			return false
 		end
+		local name = string.lower(uevrUtils.getShortName(obj))
+		for _, sub in ipairs(keepList) do
+			if string.find(name, sub, 1, true) then return true end
+		end
+		return false
 	end
-	return false
+	return matchesKeep(mat) or matchesKeep(mat.Parent)
 end
 
-local maxSectionProbe = 32
-
-local function setMaterialSectionVisible(mesh, matId, visible)
-	local sectionCount = math.max(getNumMaterials(mesh), maxSectionProbe)
+local function hideMatSections(mesh, matId, sectionCount)
+	local show = mesh.ShowMaterialSection
 	for sectionIdx = 0, sectionCount - 1 do
-		pcall(function() mesh:ShowMaterialSection(matId, sectionIdx, visible, 0) end)
+		show(mesh, matId, sectionIdx, false, 0)
+	end
+end
+
+local function hideListedMaterials(mesh)
+	for i = 1, #hiddenMaterialIds do
+		hideMatSections(mesh, hiddenMaterialIds[i], maxSectionProbe)
+	end
+end
+
+-- Hot path: only pay for ShowMaterialSection if the game re-showed the slot.
+local function applyDirty(mesh)
+	local isShown = mesh.IsMaterialSectionShown
+	local ids = hiddenMaterialIds
+	for i = 1, #ids do
+		if isShown(mesh, ids[i], 0) then
+			hideMatSections(mesh, ids[i], maxSectionProbe)
+		end
 	end
 end
 
 local function restoreMeshFirstPersonSections(mesh)
 	if mesh == nil then return end
 	if mesh.ShowAllMaterialSections ~= nil then
-		pcall(function() mesh:ShowAllMaterialSections(0) end)
-	end
-	for matId = 0, getNumMaterials(mesh) - 1 do
-		setMaterialSectionVisible(mesh, matId, true)
-	end
-end
-
-local function findMaterialsToHide(mesh)
-	local ids = {}
-	for i = 0, getNumMaterials(mesh) - 1 do
-		local ok, mat = pcall(function() return mesh:GetMaterial(i) end)
-		if not materialShouldKeep(ok and mat or nil) then
-			table.insert(ids, i)
-		end
-	end
-	return ids
-end
-
-local function applyHiddenMaterials(mesh)
-	for _, matId in ipairs(hiddenMaterialIds) do
-		setMaterialSectionVisible(mesh, matId, false)
-	end
-end
-
-local function refreshHiddenMaterials(mesh)
-	hiddenMaterialIds = findMaterialsToHide(mesh)
-	lastMaterialCount = getNumMaterials(mesh)
-	applyHiddenMaterials(mesh)
-end
-
-local function cleanupMaterialsMode()
-	local mesh = getMeshFirstPerson()
-	if uevrUtils.getValid(mesh) ~= nil then
-		restoreMeshFirstPersonSections(mesh)
+		mesh:ShowAllMaterialSections(0)
 	end
 	hiddenMaterialIds = {}
 	lastMaterialCount = -1
+	lastMaterialsMesh = nil
+end
+
+local function refreshHiddenMaterials(mesh)
+	local n = mesh:GetNumMaterials()
+	hiddenMaterialIds = {}
+	for i = 0, n - 1 do
+		if not materialShouldKeep(mesh:GetMaterial(i)) then
+			hiddenMaterialIds[#hiddenMaterialIds + 1] = i
+		end
+	end
+	lastMaterialCount = n
+	lastMaterialsMesh = mesh
+	hideListedMaterials(mesh)
+end
+
+local function cleanupMaterialsMode()
+	-- Do not ShowAllMaterialSections. Skeletal mode does not draw this mesh;
+	-- unhiding here is what brings hands back when switching to materials.
+	hiddenMaterialIds = {}
+	lastMaterialCount = -1
+	lastMaterialsMesh = nil
+	cachedFpMaterialsMesh = nil
 	fpMaterialsHidden = false
 end
 
 local function setMaterialsHidden(hidden)
 	fpMaterialsHidden = hidden == true
-	local mesh = getMeshFirstPerson()
-	if uevrUtils.getValid(mesh) == nil then return end
-	if fpMaterialsHidden then
-		refreshHiddenMaterials(mesh)
-	else
-		restoreMeshFirstPersonSections(mesh)
+	cachedFpMaterialsMesh = nil
+	lastMaterialsMesh = nil
+	hiddenMaterialIds = {}
+	lastMaterialCount = -1
+	if not fpMaterialsHidden then
+		local mesh = getMeshFirstPerson()
+		if uevrUtils.getValid(mesh) ~= nil then
+			restoreMeshFirstPersonSections(mesh)
+		end
+		return
 	end
+	-- Same as a materials-mode start: hide on the delayed maintain, not this frame.
+	uevrUtils.delay(200, maintainMaterials)
 end
 
-local function maintainMaterials()
+maintainMaterials = function()
 	if useSkeletalHiding or fpMaterialsHidden == false then return end
 	local mesh = getMeshFirstPerson()
-	if uevrUtils.getValid(mesh) == nil then return end
-	if getNumMaterials(mesh) ~= lastMaterialCount or #hiddenMaterialIds == 0 then
+	if mesh == nil then return end
+	-- New mesh after death/respawn (same material count) must rediscover, not dirty-check.
+	if mesh ~= lastMaterialsMesh or #hiddenMaterialIds == 0 then
 		refreshHiddenMaterials(mesh)
-	else
-		applyHiddenMaterials(mesh)
+		return
 	end
+	if mesh:GetNumMaterials() ~= lastMaterialCount then
+		refreshHiddenMaterials(mesh)
+		return
+	end
+	applyDirty(mesh)
 end
 maintainMaterials = uevrUtils.profiler:wrap("Body: maintainMaterials", maintainMaterials)
 
@@ -187,15 +151,18 @@ function M.dumpMeshFirstPersonMaterials()
 		print("[DI2] MeshFirstPerson not found")
 		return
 	end
-	local meshName = getMaterialFullName(mesh) or tostring(mesh)
-	print("[DI2] MeshFirstPerson: " .. meshName)
-	local numMaterials = getNumMaterials(mesh)
-	print("[DI2] GetNumMaterials: " .. tostring(numMaterials))
-	for i = 0, numMaterials - 1 do
-		local ok, mat = pcall(function() return mesh:GetMaterial(i) end)
-		mat = ok and mat or nil
+	print("[DI2] MeshFirstPerson: " .. uevrUtils.getShortName(mesh))
+	local n = mesh:GetNumMaterials()
+	print("[DI2] GetNumMaterials: " .. tostring(n))
+	for i = 0, n - 1 do
+		local mat = mesh:GetMaterial(i)
 		local action = materialShouldKeep(mat) and "KEEP" or "HIDE"
-		print(string.format("[DI2] Material[%d] [%s]: %s", i, action, getMaterialLabel(mat)))
+		local parent = mat and mat.Parent or nil
+		local label = uevrUtils.getShortName(mat)
+		if parent ~= nil then
+			label = label .. " | parent=" .. uevrUtils.getShortName(parent)
+		end
+		print(string.format("[DI2] Material[%d] [%s]: %s", i, action, label))
 	end
 	if #hiddenMaterialIds > 0 then
 		print("[DI2] Currently hidden ids: " .. table.concat(hiddenMaterialIds, ", "))
@@ -204,6 +171,7 @@ end
 
 ---------------------------------------------------------------------------
 -- Skeletal mode: poseable copy with arm bones scaled down.
+-- Only destroy poseables we created (tracked in createdPoseables).
 ---------------------------------------------------------------------------
 local armBones = { "clavicle_l", "clavicle_r", "upperarm_l", "upperarm_r" }
 local armBoneScale = uevrUtils.vector(0.001, 0.001, 0.001)
@@ -215,6 +183,7 @@ local sourceMesh = nil
 local sourceSkeletalMesh = nil
 local sourceRenderSuppressed = false
 local cachedFpMesh = nil
+local createdPoseables = {}
 
 local function getArmBoneFNames()
 	if armBoneFNames == nil then
@@ -234,11 +203,17 @@ local function getMesh()
 	return cachedFpMesh
 end
 
-local function destroyRenderMesh()
-	if uevrUtils.getValid(renderMesh) ~= nil then
-		---@diagnostic disable-next-line: need-check-nil, undefined-field
-		renderMesh:K2_DestroyComponent()
+local function destroyTrackedPoseable(comp)
+	if uevrUtils.getValid(comp) == nil then return end
+	uevrUtils.detachAndDestroyComponent(comp, false, false)
+end
+
+local function destroyAllCreatedPoseables()
+	for i = 1, #createdPoseables do
+		destroyTrackedPoseable(createdPoseables[i])
+		createdPoseables[i] = nil
 	end
+	createdPoseables = {}
 	renderMesh = nil
 	sourceMesh = nil
 	sourceSkeletalMesh = nil
@@ -272,45 +247,16 @@ local function setSourceRendering(mesh, enabled)
 	sourceRenderSuppressed = enabled ~= true
 end
 
-local function destroyOrphanPoseables(owner)
-	if uevrUtils.getValid(owner) == nil then return end
-	local comps = nil
-	pcall(function()
-		comps = owner:K2_GetComponentsByClass(uevrUtils.get_class("Class /Script/Engine.PoseableMeshComponent"))
-	end)
-	if comps == nil then return end
-	local function consider(comp)
-		if uevrUtils.getValid(comp) == nil then return end
-		pcall(function()
-			comp:call("SetRenderInMainPass", false)
-			if comp.bRenderNearest ~= nil then comp.bRenderNearest = false end
-			comp:K2_DestroyComponent()
-		end)
-	end
-	if comps[0] ~= nil or (type(comps) == "userdata") then
-		for i = 0, 16 do
-			local c = comps[i]
-			if c == nil then break end
-			consider(c)
-		end
-	elseif type(comps) == "table" then
-		for _, c in pairs(comps) do
-			consider(c)
-		end
-	end
-end
-
 local function createRenderMesh(mesh)
-	destroyRenderMesh()
+	destroyAllCreatedPoseables()
 	local owner = mesh.GetOwner ~= nil and mesh:GetOwner() or nil
 	if uevrUtils.getValid(owner) == nil or uevrUtils.getValid(mesh.SkeletalMesh) == nil then return nil end
-	destroyOrphanPoseables(owner)
 
-	local newRenderMesh = uevrUtils.create_component_of_class(
-		"Class /Script/Engine.PoseableMeshComponent",
-		false, nil, false, owner, nil
-	)
+	-- manualAttachment=true: register on pawn without auto-attaching to capsule.
+	local newRenderMesh = uevrUtils.create_component_of_class( "Class /Script/Engine.PoseableMeshComponent", true, nil, false, owner, nil )
 	if newRenderMesh == nil or uevrUtils.getValid(newRenderMesh) == nil then return nil end
+	createdPoseables[#createdPoseables + 1] = newRenderMesh
+
 	newRenderMesh.SkeletalMesh = mesh.SkeletalMesh
 	if newRenderMesh.SetMasterPoseComponent ~= nil then
 		newRenderMesh:SetMasterPoseComponent(mesh, true)
@@ -344,7 +290,7 @@ end
 
 local function ensureRenderMesh(mesh)
 	if mesh == nil or mesh.SkeletalMesh == nil then
-		destroyRenderMesh()
+		destroyAllCreatedPoseables()
 		return nil
 	end
 	if renderMesh ~= nil and sourceMesh == mesh and sourceSkeletalMesh == mesh.SkeletalMesh then
@@ -355,11 +301,9 @@ end
 
 local function stopPoseableBody()
 	local mesh = getMesh()
-	destroyRenderMesh()
+	destroyAllCreatedPoseables()
 	cachedFpMesh = nil
 	if uevrUtils.getValid(mesh) ~= nil then
-		local owner = mesh.GetOwner ~= nil and mesh:GetOwner() or nil
-		destroyOrphanPoseables(owner)
 		setSourceRendering(mesh, true)
 	end
 end
@@ -374,7 +318,7 @@ local function updateRenderMesh()
 
 	local mesh = getMesh()
 	if mesh == nil then
-		destroyRenderMesh()
+		destroyAllCreatedPoseables()
 		return
 	end
 
@@ -446,7 +390,7 @@ function M.setCounterSequence(active)
 	end
 end
 
--- UI: true=Enable (show). Montage: Hidden→true, Visible→false.
+-- UI: true=Enable (show). Montage: Hidden->true, Visible->false.
 local uiArmBones, montageArmBones = nil, nil
 local armBoneStateSeen = false
 local function syncToArmBoneState()
@@ -479,7 +423,7 @@ configui.onCreateOrUpdate("use_skeletal_mesh_hiding", function(value)
 	setSkeletalHidingEnabled(value == true)
 end)
 
-uevrUtils.delay(500, maintainMaterials)
+uevrUtils.delay(200, maintainMaterials)
 uevrUtils.setInterval(2000, maintainMaterials)
 
 uevrUtils.registerPostEngineTickCallback(function()
@@ -487,10 +431,14 @@ uevrUtils.registerPostEngineTickCallback(function()
 end)
 
 uevrUtils.registerPreLevelChangeCallback(function()
+	cachedFpMaterialsMesh = nil
 	cachedFpMesh = nil
-	if useSkeletalHiding then
-		stopPoseableBody()
-	end
+	destroyAllCreatedPoseables()
+end)
+
+uevr.params.sdk.callbacks.on_script_reset(function()
+	destroyAllCreatedPoseables()
 end)
 
 return M
+

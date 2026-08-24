@@ -1282,6 +1282,14 @@ local function updateDecoupledYaw(state, rotationHand)
 			elseif thumbRX <= snapTurnDeadZone and thumbRX >=-snapTurnDeadZone then
 				rxState=0
 			end
+			-- Snap already applied; holding the stick must not keep analog-looking.
+			if rxState == 1 then
+				if rotationHand == Handed.Left then
+					state.Gamepad.sThumbLX = 0
+				else
+					state.Gamepad.sThumbRX = 0
+				end
+			end
 		else
 			local smoothTurnRate = (getParameter("smoothTurnSpeed") or 0) / 12.5
 			local rate = thumbRX/32767

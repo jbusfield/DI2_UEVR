@@ -39,11 +39,9 @@ local body = require("helpers/body")
 -- widgetModule.setLogLevel(LogLevel.Debug)
 -- ik.setLogLevel(LogLevel.Debug)
 
-uevrUtils.setDeveloperMode(true)
+--uevrUtils.setDeveloperMode(true)
 --hands.enableConfigurationTool()
-uevrUtils.profiler:toggle(true)
-
---TODO make sure material on body are optimized
+--uevrUtils.profiler:toggle(true)
 
 ui.init()
 montage.init()
@@ -120,18 +118,20 @@ local configDefinition = {
 				{ widgetType = "text", wrapped = true, label = "Melee: Swing your right controller while holding melee weapon", },
 				{ widgetType = "text", wrapped = true, label = "Heavy Attack: Hold Right Trigger while swinging", },
 
-				{ widgetType = "begin_group", id = "interaction_info_vaniilla_plus_group", isHidden = true },
+				{ widgetType = "begin_group", id = "interaction_info_vanilla_plus_group", isHidden = true },
 					{ widgetType = "text", wrapped = true, label = "Jump: Right Stick forward", },
 					{ widgetType = "text", wrapped = true, label = "Block/Dodge: Right Stick backward", },
 				{ widgetType = "end_group", },
 
-				{ widgetType = "begin_group", id = "interaction_info_vaniilla_mixed_group", isHidden = true },
+				{ widgetType = "begin_group", id = "interaction_info_mixed_group", isHidden = true },
 					{ widgetType = "text", wrapped = true, label = "Inventory: Left Grip near ear", },
+					{ widgetType = "text", wrapped = true, label = "Heal: Left Grip near mouth", },
 					{ widgetType = "text", wrapped = true, label = "Rage: Left Trigger near eyes", },
 				{ widgetType = "end_group", },
 
-				{ widgetType = "begin_group", id = "interaction_info_vaniilla_full_group", isHidden = true },
+				{ widgetType = "begin_group", id = "interaction_info_full_group", isHidden = true },
 					{ widgetType = "text", wrapped = true, label = "Inventory: Left Grip near ear", },
+					{ widgetType = "text", wrapped = true, label = "Heal: Left Grip near mouth (no DPAD Down)", },
 					{ widgetType = "text", wrapped = true, label = "Rage: Left Trigger near eyes (no L3+R3)", },
 				{ widgetType = "end_group", },
 
@@ -560,6 +560,7 @@ uevrUtils.registerUEVRCallback("scaleform_ui_change", function(className, visibl
 		uevrUtils.setIsCharacterHiddenOverride(visible == true)
 		if className == "BP_HUDObject_FailScreen_C" and visible == false then
 			regenerateHands(configui.getValue("hands_type"))
+			body.setHidden(true)
 			--input.reset()
 		end
 	elseif className == "BP_MenuInstance_Locker_C" then
@@ -579,9 +580,9 @@ end)
 
 local remapLabels = {"Vanilla", "Vanilla Plus", "Mixed", "Full Immersion"}
 configui.onCreateOrUpdate("interaction_control_mode", function(value)
-	configui.setHidden("interaction_info_vaniilla_plus_group", value == 1)
-	configui.setHidden("interaction_info_vaniilla_mixed_group", value ~= 3)
-	configui.setHidden("interaction_info_vaniilla_full_group", value ~= 4)
+	configui.setHidden("interaction_info_vanilla_plus_group", value == 1)
+	configui.setHidden("interaction_info_mixed_group", value ~= 3)
+	configui.setHidden("interaction_info_full_group", value ~= 4)
 
 	remap.setCurrentProfileByLabel(remapLabels[value])
 end)
@@ -614,6 +615,9 @@ uevrUtils.registerOnPreInputGetStateCallback(function(retval, user_index, state)
 				uevrUtils.unpressButton(state, XINPUT_GAMEPAD_LEFT_THUMB)
 				uevrUtils.unpressButton(state, XINPUT_GAMEPAD_RIGHT_THUMB)
 			end
+			if uevrUtils.isButtonPressed(state, XINPUT_GAMEPAD_DPAD_DOWN) then
+				uevrUtils.unpressButton(state, XINPUT_GAMEPAD_DPAD_DOWN)
+			end
 		end
 
 		if xInputStatus.triggerEyes ~= triggerEyes then
@@ -631,9 +635,16 @@ uevrUtils.registerOnPreInputGetStateCallback(function(retval, user_index, state)
 			end
 		end
 
+		if xInputStatus.isGrippingMouth ~= gripMouth then
+			xInputStatus.isGrippingMouth = gripMouth
+			if gripEar then
+				uevrUtils.pressButton(state, XINPUT_GAMEPAD_DPAD_DOWN)
+			end
+		end
+
 	end
 end)
 
-register_key_bind("F1", function()
-	uevrUtils.profiler:report()
-end)
+-- register_key_bind("F1", function()
+-- 	uevrUtils.profiler:report()
+-- end)
