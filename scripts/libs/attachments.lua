@@ -1064,14 +1064,15 @@ function M.getAttachmentOffset(attachment)
 				return uevrUtils.vector(position), uevrUtils.rotator(rotation), uevrUtils.vector(scale)
 			end
 		end
-		if attachment.RelativeLocation.X > 10000 or attachment.RelativeLocation.Y > 10000 or attachment.RelativeLocation.Z > 10000 then
-			M.print("Attachment location is too large. Resetting to 0,0,0: " .. attachment.RelativeLocation.X .. ", " .. attachment.RelativeLocation.Y .. ", " .. attachment.RelativeLocation.Z)
+		local rx, ry, rz = attachment.RelativeLocation.X, attachment.RelativeLocation.Y, attachment.RelativeLocation.Z
+		if rx > 1000 or rx < -1000 or ry > 1000 or ry < -1000 or rz > 1000 or rz < -1000 then
+			M.print("Attachment location is too large. Resetting to 0,0,0: " .. rx .. ", " .. ry .. ", " .. rz)
 			attachmentLocation = {0,0,0}
 			attachment.RelativeLocation.X = 0
 			attachment.RelativeLocation.Y = 0
 			attachment.RelativeLocation.Z = 0
 		else
-			attachmentLocation = {attachment.RelativeLocation.X, attachment.RelativeLocation.Y, attachment.RelativeLocation.Z}
+			attachmentLocation = {rx, ry, rz}
 		end
 		attachmentRotation = {attachment.RelativeRotation.Pitch, attachment.RelativeRotation.Yaw, attachment.RelativeRotation.Roll}
 		attachmentScale = {attachment.RelativeScale3D.X, attachment.RelativeScale3D.Y, attachment.RelativeScale3D.Z}

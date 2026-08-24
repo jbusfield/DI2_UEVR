@@ -3,6 +3,7 @@ local mathLib = require('libs/core/math_lib')
 local montage = require('libs/montage')
 local input = require('libs/input')
 local attachments = require('libs/attachments')
+local weapons = require('helpers/weapons')
 
 ---------------------------------------------------------------------------
 -- VR melee: RequestBeginStandardAttack (durability / attack state), mute body
@@ -80,17 +81,6 @@ local function getMeleeSweepComponent(weapon)
 	return sweep
 end
 
-local function getWeaponMesh(hand)
-	local pawn = uevrUtils.get_local_pawn()
-	if pawn == nil then return nil end
-	local proxy = pawn.BPC_Player_WeaponProxy
-	if proxy == nil or proxy.GetChildActorForHand == nil then return nil end
-	local childComp = proxy:GetChildActorForHand(weaponHandIndex(hand))
-	local weaponActor = childComp and childComp.ChildActor
-	if weaponActor == nil then return nil end
-	return weaponActor.WeaponMesh or weaponActor.SkeletalMesh
-end
-
 local function endVrMeleeSweep()
 	local sweep = status.vrMeleeSweep
 	local weapon = status.vrMeleeWeapon
@@ -115,7 +105,7 @@ local function endVrMeleeSweep()
 end
 
 local function beginVrMeleeSweep(heavy, hand)
-	local gripMesh = getWeaponMesh(hand)
+	local gripMesh = weapons.getMeleeWeaponMesh(hand)
 	if uevrUtils.getValid(gripMesh) == nil then return false end
 
 	local weapon = getMeleeItemActor(hand)
