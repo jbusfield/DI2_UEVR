@@ -25,8 +25,6 @@ local ranged = require("helpers/ranged")
 local weapons = require("helpers/weapons")
 local flashlight = require("helpers/flashlight")
 local body = require("helpers/body")
---local dev = require('libs/uevr_dev')
---dev.init()
 
 --uevrUtils.setLogLevel(LogLevel.Debug)
 -- reticule.setLogLevel(LogLevel.Debug)
@@ -438,7 +436,7 @@ hook_function("Class /Script/DeadIsland.CoopSequenceTask_Counter", "OnActionEnde
 -- Show body when knocked down
 montage.registerMontageChangeCallback(function(montageObject, montageName, label)
 	--if montageName starts with "AM_Base_Hit_Knockdown" then
-	if uevrUtils.startsWith(montageName, "AM_Base_Hit_Knockdown") or uevrUtils.startsWith(montageName, "AM_Base_Downed") then
+	if uevrUtils.startsWith(montageName, "AM_Base_Hit_Knockdown") or uevrUtils.startsWith(montageName, "AM_Base_Downed")  or uevrUtils.startsWith(montageName, "AM_Base_Death") then
 		body.setHidden(false)
 		input.setDisabled(true)
 		status.knockdown = true
@@ -637,9 +635,12 @@ uevrUtils.registerOnPreInputGetStateCallback(function(retval, user_index, state)
 
 		if xInputStatus.isGrippingMouth ~= gripMouth then
 			xInputStatus.isGrippingMouth = gripMouth
-			if gripEar then
+			if gripMouth then
 				uevrUtils.pressButton(state, XINPUT_GAMEPAD_DPAD_DOWN)
 			end
+		end
+		if gripMouth then
+			uevrUtils.unpressButton(state, XINPUT_GAMEPAD_LEFT_SHOULDER)
 		end
 
 	end

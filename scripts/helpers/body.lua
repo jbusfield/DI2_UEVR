@@ -102,13 +102,12 @@ local function refreshHiddenMaterials(mesh)
 end
 
 local function cleanupMaterialsMode()
-	-- Do not ShowAllMaterialSections. Skeletal mode does not draw this mesh;
-	-- unhiding here is what brings hands back when switching to materials.
+	-- Leave section hides on the source mesh. Clearing fpMaterialsHidden here
+	-- would stop maintain from re-hiding after death while skeletal is on.
 	hiddenMaterialIds = {}
 	lastMaterialCount = -1
 	lastMaterialsMesh = nil
 	cachedFpMaterialsMesh = nil
-	fpMaterialsHidden = false
 end
 
 local function setMaterialsHidden(hidden)
@@ -129,7 +128,7 @@ local function setMaterialsHidden(hidden)
 end
 
 maintainMaterials = function()
-	if useSkeletalHiding or fpMaterialsHidden == false then return end
+	if fpMaterialsHidden == false then return end
 	local mesh = getMeshFirstPerson()
 	if mesh == nil then return end
 	-- New mesh after death/respawn (same material count) must rediscover, not dirty-check.
@@ -347,10 +346,11 @@ end
 -- Shared API / mode switching
 ---------------------------------------------------------------------------
 local function applyHidden(hidden)
+	-- Always hide/restore sections on the original FP mesh. Death restores them
+	-- even while skeletal mode is on and the source starts drawing again.
+	setMaterialsHidden(hidden == true)
 	if useSkeletalHiding then
 		setSkeletalHidden(hidden == true)
-	else
-		setMaterialsHidden(hidden == true)
 	end
 end
 
@@ -433,8 +433,18 @@ end)
 uevrUtils.registerPreLevelChangeCallback(function()
 	cachedFpMaterialsMesh = nil
 	cachedFpMesh = nil
+	lastMaterialsMesh = nil
+	hiddenMaterialIds = {}
 	destroyAllCreatedPoseables()
 end)
+
+-- uevrUtils.registerUEVRCallback("on_client_restart", function()
+-- 	cachedFpMaterialsMesh = nil
+-- 	cachedFpMesh = nil
+-- 	lastMaterialsMesh = nil
+-- 	hiddenMaterialIds = {}
+-- 	uevrUtils.delay(200, maintainMaterials)
+-- end)
 
 uevr.params.sdk.callbacks.on_script_reset(function()
 	destroyAllCreatedPoseables()
