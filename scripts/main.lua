@@ -45,7 +45,7 @@ ui.init()
 montage.init()
 interaction.init()
 attachments.init()
---attachments.setLaserColor("#00FFFFFF")
+attachments.setLaserColor("#00FF00FF")
 reticule.init()
 reticule.setHiddenWhenScopeActive(true)
 pawnModule.init()
@@ -59,7 +59,6 @@ collision.init()
 
 hands.setAutoCreateHands(false)
 ik.setAutoCreateArms(false)
---laser.setUseEmissive(true)
 
 --since weapons are attached to the hand sockets for this game
 --only let the hands be affected by gunstock offsets
@@ -67,7 +66,7 @@ attachments.setGunstockOffsetsEnabled(false)
 hands.setGunstockOffsetsEnabled(true)
 ik.setGunstockOffsetsEnabled(true)
 
-local versionTxt = "v1.0.0"
+local versionTxt = "v1.0.2"
 local title = "Dead Island 2 First Person Mod " .. versionTxt
 local configDefinition = {
 	{
@@ -96,12 +95,28 @@ local configDefinition = {
                     label = "Gun Lasers",
                     initialValue = true,
                 },
+                { widgetType = "indent", width = 20 },
+                {
+                    widgetType = "checkbox",
+                    id = "attachment_emmissive_lasers",
+                    label = "Emissive",
+                    initialValue = true,
+                },
+				{ widgetType = "unindent", width = 20 },
                 {
                     widgetType = "checkbox",
                     id = "left_arm_block_dodge",
                     label = "Left Arm Block/Dodge",
                     initialValue = true,
                 },
+                { widgetType = "indent", width = 20 },
+                {
+                    widgetType = "text",
+                    id = "left_arm_block_dodge_info",
+                    wrapped = true,
+                    label = "Raise your left arm in front of your face with palm out to block or dodge",
+                },
+                { widgetType = "unindent", width = 20 },
 				{
 					widgetType = "combo",
 					id = "interaction_control_mode",
@@ -264,6 +279,11 @@ end)
 
 configui.onCreateOrUpdate("attachment_lasers", function(value)
 	attachments.setLasersEnabled(value == true)
+	configui.setHidden("attachment_emmissive_lasers", value ~= true)
+end)
+
+configui.onCreateOrUpdate("attachment_emmissive_lasers", function(value)
+	laser.setUseEmissive(value == true)
 end)
 
 
@@ -378,6 +398,18 @@ attachments.registerAttachmentChangeCallback(function(id, gripHand, attachment)
 	gestures.autoDetectGesture(gestures.Gesture.SWIPE_LEFT, isMeleeWeapon, gripHand)
 end)
 
+local equippedItemsWheelClass = "BlueprintGeneratedClass /Game/DI2/UI/HUD/Objects/WeaponWheel/BP_HUDObject_EquippedItemsWheel.BP_HUDObject_EquippedItemsWheel_C"
+local function hookEquippedItemsWheel()
+	local _, openFn = hook_function(equippedItemsWheelClass, "OnOpenWheel", false, nil,
+		function()
+			uevrUtils.executeUEVRCallbacks("scaleform_ui_change", "BP_HUDObject_EquippedItemsWheel_C", true)
+		end, false)
+	local _, closeFn = hook_function(equippedItemsWheelClass, "OnCloseWheel", false, nil,
+		function()
+			uevrUtils.executeUEVRCallbacks("scaleform_ui_change", "BP_HUDObject_EquippedItemsWheel_C", false)
+		end, false)
+end
+
 function on_level_change(level, levelName)
 	hideReticule(true)
 	regenerateHands(configui.getValue("hands_type"))
@@ -388,6 +420,7 @@ function on_level_change(level, levelName)
 	flashlight.reset()
 	flashlight.updateFlashlightOffsetVisibility()
 	flashlight.attachFlashlightToController(true)
+	hookEquippedItemsWheel()
 end
 
 uevrUtils.setInterval(1000, function()
@@ -436,7 +469,7 @@ hook_function("Class /Script/DeadIsland.CoopSequenceTask_Counter", "OnActionEnde
 -- Show body when knocked down
 montage.registerMontageChangeCallback(function(montageObject, montageName, label)
 	--if montageName starts with "AM_Base_Hit_Knockdown" then
-	if uevrUtils.startsWith(montageName, "AM_Base_Hit_Knockdown") or uevrUtils.startsWith(montageName, "AM_Base_Downed")  or uevrUtils.startsWith(montageName, "AM_Base_Death") then
+	if uevrUtils.startsWith(montageName, "AM_Base_Hit_Knockdown") or uevrUtils.startsWith(montageName, "AM_Base_Downed") or uevrUtils.startsWith(montageName, "AM_Base_Death") or uevrUtils.startsWith(montageName, "AM_1P_Death") then
 		body.setHidden(false)
 		input.setDisabled(true)
 		status.knockdown = true
@@ -448,6 +481,18 @@ montage.registerMontageChangeCallback(function(montageObject, montageName, label
 end)
 
 ---------------- Special Scaleform UI handlers since they are not widget based -----------------------------
+-- EquippedItemsWheel stays IsBaseAssetShowing=true even when closed; use open/close events instead.
+hook_function("BlueprintGeneratedClass /Game/DI2/UI/HUD/Objects/WeaponWheel/BP_HUDObject_EquippedItemsWheel.BP_HUDObject_EquippedItemsWheel_C", "OnOpenWheel", false, nil,
+	function()
+		print("[DI2] OnOpenWheel")
+		uevrUtils.executeUEVRCallbacks("scaleform_ui_change", "BP_HUDObject_EquippedItemsWheel_C", true)
+	end, true)
+hook_function("BlueprintGeneratedClass /Game/DI2/UI/HUD/Objects/WeaponWheel/BP_HUDObject_EquippedItemsWheel.BP_HUDObject_EquippedItemsWheel_C", "OnCloseWheel", false, nil,
+	function()
+		print("[DI2] OnCloseWheel")
+		uevrUtils.executeUEVRCallbacks("scaleform_ui_change", "BP_HUDObject_EquippedItemsWheel_C", false)
+	end, true)
+
 local lastActiveScaleformMenus = {}
 setInterval(500, function()
 	local current = {}
@@ -553,7 +598,7 @@ setInterval(5000, function()
 end)
 
 uevrUtils.registerUEVRCallback("scaleform_ui_change", function(className, visible)
-	print("[DI2] scaleform_ui_change", className, visible)
+	--print("[DI2] scaleform_ui_change", className, visible)
 	if className == "BP_HUDObject_Credits_C" or className == "BP_HUDObject_FailScreen_C" then
 		uevrUtils.setIsCharacterHiddenOverride(visible == true)
 		if className == "BP_HUDObject_FailScreen_C" and visible == false then
@@ -561,6 +606,9 @@ uevrUtils.registerUEVRCallback("scaleform_ui_change", function(className, visibl
 			body.setHidden(true)
 			--input.reset()
 		end
+	elseif className == "BP_HUDObject_EquippedItemsWheel_C" then
+		uevrUtils.setIsCharacterHiddenOverride(visible == true)
+		status.isWeaponWheelVisible = visible
 	elseif className == "BP_MenuInstance_Locker_C" then
 		regenerateHands(configui.getValue("hands_type"))
 	elseif className == "BP_HUDObject_Fader_C" then
@@ -586,6 +634,7 @@ configui.onCreateOrUpdate("interaction_control_mode", function(value)
 end)
 
 configui.onCreateOrUpdate("left_arm_block_dodge", function(value)
+	configui.setHidden("left_arm_block_dodge_info", value ~= true)
 	gestures.autoDetectGesture(gestures.Gesture.BLOCK, value == true, Handed.Left)
 	if value ~= true then
 		status.isBlocking = false
@@ -600,12 +649,26 @@ end, false, false)
 
 local xInputStatus = {}
 uevrUtils.registerOnPreInputGetStateCallback(function(retval, user_index, state)
+	if status.isWeaponWheelVisible == true then
+		if uevrUtils.isButtonPressed(state, XINPUT_GAMEPAD_B) then
+			if state.Gamepad.sThumbRX < -22000 then
+				uevrUtils.pressButton(state, XINPUT_GAMEPAD_DPAD_LEFT)
+			end
+			if state.Gamepad.sThumbRX > 22000 then
+				uevrUtils.pressButton(state, XINPUT_GAMEPAD_DPAD_RIGHT)
+			end
+			state.Gamepad.sThumbRX = 0
+		end
+	end
+
+	if ui.isRemapDisabled() == true then return end
+
 	if configui.getValue("left_arm_block_dodge") and status.isBlocking then
 		uevrUtils.pressButton(state, XINPUT_GAMEPAD_LEFT_SHOULDER)
 	end
 
 	local interactionControlMode = configui.getValue("interaction_control_mode") or 1
-	if interactionControlMode == 3 or interactionControlMode == 4 and (ui.isRemapDisabled()) ~= true then
+	if interactionControlMode == 3 or interactionControlMode == 4 then --(ui.isRemapDisabled()) ~= true then
 		local gripMouth, gripEyes, gripHead, gripEar, triggerMouth, triggerEyes, triggerHead, triggerEar = gestures.getHeadGestures(state, 1 - uevrUtils.getHandedness(), true)
 
 		if interactionControlMode == 4 then

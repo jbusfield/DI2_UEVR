@@ -2780,12 +2780,12 @@ function M.create_component_of_class(class, manualAttachment, relativeTransform,
 	local component = nil
 	if baseActor.AddComponentByClass == nil then
 		component = uevr.api:add_component_by_class(baseActor, class, deferredFinish)
-		print("Used uevr.api:add_component_by_class to create component", baseActor, component, class)
+		--print("Used uevr.api:add_component_by_class to create component", baseActor, component, class)
 		if component == nil then
 			if checkPluginExists() then
 			---@diagnostic disable-next-line: need-check-nil
 				component = plugin.addComponent(baseActor, class)
-				print("Used plugin.addComponent to create component", baseActor, component, class)
+				--print("Used plugin.addComponent to create component", baseActor, component, class)
 			end
 		end
 	else
@@ -4590,7 +4590,7 @@ M.initUEVR(uevr)
 -- 	uevrUtils.print("Pawn changed to " .. newPawn:get_full_name())
 -- end
 if disableHookFunctions ~= true then
-	print("Hooking PlayerController ClientRestart function to detect pawn changes")
+	--print("Hooking PlayerController ClientRestart function to detect pawn changes")
 	hook_function("Class /Script/Engine.PlayerController", "ClientRestart", true, nil,
 		function(fn, obj, locals, result)
 			if on_client_restart ~= nil or hasUEVRCallbacks("on_client_restart") then --don't bother doing anything if nothing is listening

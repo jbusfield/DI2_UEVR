@@ -136,9 +136,10 @@ local function convertInputStruct(arg)
     return out
 end
 
---loop through all args recursively and convert any uobject to its address
+-- Walk all keys (array slots and named struct fields) and convert UObjects to addresses.
+-- ipairs would skip { NotifyStateClass = obj, Duration = 0.1 } because those are not t[1], t[2], ...
 local function convertInputParams(argsArray)
-	for i, arg in ipairs(argsArray) do
+	for i, arg in pairs(argsArray) do
 		if M.showDebug then print("Argument is type", type(arg)) end
 		if type(arg) == "userdata" then
             if arg.get_struct ~= nil then

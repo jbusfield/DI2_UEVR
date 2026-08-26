@@ -199,6 +199,10 @@ local function getMesh()
 		return cachedFpMesh
 	end
 	cachedFpMesh = uevrUtils.getObjectFromDescriptor("Pawn.MeshFirstPerson")
+	if uevrUtils.getValid(cachedFpMesh) == nil then
+		cachedFpMesh = nil
+		return nil
+	end
 	return cachedFpMesh
 end
 
@@ -288,11 +292,16 @@ local function createRenderMesh(mesh)
 end
 
 local function ensureRenderMesh(mesh)
-	if mesh == nil or mesh.SkeletalMesh == nil then
+	if uevrUtils.getValid(mesh) == nil then
 		destroyAllCreatedPoseables()
 		return nil
 	end
-	if renderMesh ~= nil and sourceMesh == mesh and sourceSkeletalMesh == mesh.SkeletalMesh then
+	local skel = mesh.SkeletalMesh
+	if uevrUtils.getValid(skel) == nil then
+		destroyAllCreatedPoseables()
+		return nil
+	end
+	if renderMesh ~= nil and sourceMesh == mesh and sourceSkeletalMesh == skel then
 		return renderMesh
 	end
 	return createRenderMesh(mesh)

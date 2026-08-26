@@ -195,7 +195,8 @@ function Laser:createVisual()
         return
     end
 
-    uevrUtils.getLoadedAsset(cylinderMeshPath)
+    -- Engine BasicShapes/EngineResources often aren't in the AssetRegistry (getLoadedAsset fails);
+    -- resolve via find_instance_of / find_required_object like createStaticMeshComponent does.
     self.visualComponent = uevrUtils.createStaticMeshComponent(cylinderMeshPath, {visible = true, collisionEnabled = false})
     local v = uevrUtils.getValid(self.visualComponent)
     if v == nil then
@@ -218,7 +219,8 @@ function Laser:createVisual()
         self.visualMaterial = v:CreateDynamicMaterialInstance(0, templateMaterial, "laser_material")
         local mat = uevrUtils.getValid(self.visualMaterial)
         if mat ~= nil and mat.SetTextureParameterValue ~= nil then
-            local whiteTex = uevrUtils.getLoadedAsset(whiteTexturePath) or uevrUtils.find_required_object(whiteTexturePath)
+            local whiteTex = uevrUtils.find_required_object(whiteTexturePath)
+                or uevrUtils.find_instance_of("Class /Script/Engine.Texture2D", whiteTexturePath)
             if whiteTex ~= nil then
                 mat:SetTextureParameterValue("LinearColor", whiteTex)
             end
