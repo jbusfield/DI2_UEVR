@@ -25,6 +25,7 @@ local ranged = require("helpers/ranged")
 local weapons = require("helpers/weapons")
 local flashlight = require("helpers/flashlight")
 local body = require("helpers/body")
+local alyxWheel = require("helpers/alyx_wheel")
 
 --uevrUtils.setLogLevel(LogLevel.Debug)
 -- reticule.setLogLevel(LogLevel.Debug)
@@ -66,7 +67,7 @@ attachments.setGunstockOffsetsEnabled(false)
 hands.setGunstockOffsetsEnabled(true)
 ik.setGunstockOffsetsEnabled(true)
 
-local versionTxt = "v1.0.2"
+local versionTxt = "v1.0.3"
 local title = "Dead Island 2 First Person Mod " .. versionTxt
 local configDefinition = {
 	{
@@ -151,7 +152,11 @@ local configDefinition = {
                 { widgetType = "unindent", width = 10 },
             	{ widgetType = "end_rect", additionalSize = 12, rounding = 5 }, { widgetType = "unindent", width = 20 },
 				{ widgetType = "new_line" },
-
+				expandArray(gestures.getConfigurationWidgets, {
+					select = {
+						{ id = "uevr_gesture_config_swipe_minThresholdSpeed", label = "Swing Effort Required", range = {100, 1000} },
+					},
+				}),
                 {
                     widgetType = "combo",
                     id = "flashlight_location",
@@ -213,6 +218,11 @@ local configDefinition = {
                     isHidden = true,
                 },
 				{ widgetType = "unindent", width = 20 },
+			{ widgetType = "end_rect", additionalSize = 12, rounding = 5 }, { widgetType = "unindent", width = 20 },
+			{ widgetType = "new_line" },
+			{ widgetType = "indent", width = 20 }, { widgetType = "text", label = "Weapon Wheel" }, { widgetType = "begin_rect", },
+				{ widgetType = "text", label = "Half-Life: Alyx Style Weapon Wheel - Coutesy of vinion" },
+				expandArray(alyxWheel.getConfigurationWidgets),
 			{ widgetType = "end_rect", additionalSize = 12, rounding = 5 }, { widgetType = "unindent", width = 20 },
 			{ widgetType = "new_line" },
 			{ widgetType = "indent", width = 20 }, { widgetType = "text", label = "UI" }, { widgetType = "begin_rect", },
@@ -387,7 +397,7 @@ attachments.registerAttachmentChangeCallback(function(id, gripHand, attachment)
 		weapons.reparentWeaponFx(attachment)
 	end
 
-	local isMeleeWeapon = type(id) == "string" and string.find(id, "BP_MeleeWeapon", 1, true) == 1
+	local isMeleeWeapon = (type(id) == "string" and string.find(id, "BP_MeleeWeapon", 1, true) == 1) or (attachment ~= nil and attachments.isActiveAttachmentMelee(gripHand))
 	if isMeleeWeapon and attachment ~= nil then
 		attachment:SetCollisionEnabled(ECollisionEnabled.QueryAndPhysics)
 		attachment:SetCollisionResponseToAllChannels(ECollisionResponse.Ignore)
@@ -481,18 +491,6 @@ montage.registerMontageChangeCallback(function(montageObject, montageName, label
 end)
 
 ---------------- Special Scaleform UI handlers since they are not widget based -----------------------------
--- EquippedItemsWheel stays IsBaseAssetShowing=true even when closed; use open/close events instead.
-hook_function("BlueprintGeneratedClass /Game/DI2/UI/HUD/Objects/WeaponWheel/BP_HUDObject_EquippedItemsWheel.BP_HUDObject_EquippedItemsWheel_C", "OnOpenWheel", false, nil,
-	function()
-		print("[DI2] OnOpenWheel")
-		uevrUtils.executeUEVRCallbacks("scaleform_ui_change", "BP_HUDObject_EquippedItemsWheel_C", true)
-	end, true)
-hook_function("BlueprintGeneratedClass /Game/DI2/UI/HUD/Objects/WeaponWheel/BP_HUDObject_EquippedItemsWheel.BP_HUDObject_EquippedItemsWheel_C", "OnCloseWheel", false, nil,
-	function()
-		print("[DI2] OnCloseWheel")
-		uevrUtils.executeUEVRCallbacks("scaleform_ui_change", "BP_HUDObject_EquippedItemsWheel_C", false)
-	end, true)
-
 local lastActiveScaleformMenus = {}
 setInterval(500, function()
 	local current = {}
@@ -600,14 +598,17 @@ end)
 uevrUtils.registerUEVRCallback("scaleform_ui_change", function(className, visible)
 	--print("[DI2] scaleform_ui_change", className, visible)
 	if className == "BP_HUDObject_Credits_C" or className == "BP_HUDObject_FailScreen_C" then
-		uevrUtils.setIsCharacterHiddenOverride(visible == true)
+		--print("Character Hidden Override: ", visible)
+		-- nil clears override; false would stick and block automatic detection
+		uevrUtils.setIsCharacterHiddenOverride(visible and true or nil)
 		if className == "BP_HUDObject_FailScreen_C" and visible == false then
 			regenerateHands(configui.getValue("hands_type"))
 			body.setHidden(true)
 			--input.reset()
 		end
 	elseif className == "BP_HUDObject_EquippedItemsWheel_C" then
-		uevrUtils.setIsCharacterHiddenOverride(visible == true)
+		--print("Character Hidden Override: ", visible)
+		uevrUtils.setIsCharacterHiddenOverride(visible and true or nil)
 		status.isWeaponWheelVisible = visible
 	elseif className == "BP_MenuInstance_Locker_C" then
 		regenerateHands(configui.getValue("hands_type"))
@@ -712,3 +713,8 @@ end)
 -- register_key_bind("F1", function()
 -- 	uevrUtils.profiler:report()
 -- end)
+
+register_key_bind("F2", function()
+	print("F2 pressed")
+	print(uevrUtils.isCharacterHidden())
+end)

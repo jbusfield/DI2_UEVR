@@ -170,6 +170,7 @@ local parameters = {
 }
 
 local paramManager = paramModule.new(parametersFileName, parameters, true)
+local gestureConfig = nil
 local gestureConfigDev = nil
 
 local currentLogLevel = LogLevel.Error
@@ -1114,6 +1115,24 @@ end
 function M.registerBlockCallback(callback, rightHand, leftHand)
 	registerGestureDetection(M.Gesture.BLOCK, rightHand, leftHand)
 	uevrUtils.registerUEVRCallback("on_gesture_block", callback)
+end
+
+function M.getConfigurationWidgets(options)
+	if gestureConfig == nil then
+		gestureConfig = require("libs/config/gesture_config")
+	end
+	createConfigMonitor()
+	gestureConfig.init(paramManager)
+	return gestureConfig.getConfigurationWidgets(options)
+end
+
+function M.showConfiguration(saveFileName, options)
+	if gestureConfig == nil then
+		gestureConfig = require("libs/config/gesture_config")
+	end
+	createConfigMonitor()
+	gestureConfig.init(paramManager)
+	gestureConfig.showConfiguration(saveFileName, options)
 end
 
 function M.init(isDeveloperMode, logLevel)
