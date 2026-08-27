@@ -1,3 +1,4 @@
+
 # DI2_UEVR
 A mod for UEVR when playing Dead Island 2
 
@@ -11,7 +12,7 @@ A mod for UEVR when playing Dead Island 2
 - Option to attach the UI to head movement
 - Support for physical gunstocks
 
-<img width="347" height="537" alt="DI2Settings" src="https://github.com/user-attachments/assets/bdf69874-85a5-46ed-b973-ea07e1766154" />
+<img width="374" height="536" alt="DI2Settings_2" src="https://github.com/user-attachments/assets/301e9c4e-09aa-45f6-8488-6a41ec844752" />
 
 ## Notes:
 - Weapon Wheel - Hold B button (X on the left physical controller) while the wheel is open and then the right stick will cycle through weapons for the currently selected slot in the same way Dpad does
@@ -20,4 +21,7 @@ A mod for UEVR when playing Dead Island 2
 <BR>  2 - Go to the game menu before opening the UEVR overlay. With the game menu showing, rage cant be triggered
 <BR>  3 - Set the Interaction Controls dropdown to Full Immersion and then rage cant be activated by L3+R3, it can only be activated by Left Trigger near the eyes.
   
+## Contributors
+Thanks to vinion for Half-Life: Alyx Weapon Wheel and letmein for settings that fix rendering "pop-in"
+
 
