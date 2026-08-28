@@ -1,7 +1,7 @@
 ## Running with AFW
 
 ### OptiScaler
-Get <A HREF="https://www.nexusmods.com/deadisland2/mods/19?tab=files">OptiScaler</A>. Pick the one that says "OptiScaler for Dead Island 2". Extract the contents of the zip into your game folder. The game folder should then look like this
+Get <A HREF="https://www.nexusmods.com/deadisland2/mods/19?tab=files">OptiScaler</A>. Pick the one that says "OptiScaler for Dead Island 2". Extract the contents of the zip into your game folder's DeadIsland/Binaries/Win64 folder. The game folder should then look like this
 
 <img width="547" height="398" alt="DI2_AFW_1" src="https://github.com/user-attachments/assets/298ccd36-14af-4f83-be1e-879b82c4ffe6" />
 
