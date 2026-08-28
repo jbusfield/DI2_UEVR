@@ -16,7 +16,7 @@ Go back to the game Main Menu (saving the changes you made when asked) and press
 <img width="420" height="509" alt="DI2_AFW_3" src="https://github.com/user-attachments/assets/b9a77eeb-fd89-415e-9c77-2c7a3ce0a36a" />
 
 ### UEVR
-Get the Joey build of <A HREF="https://github.com/PureDark/UEVR/releases/tag/UEVR_AFW_v1.0-beta.6">AFW beta 6</A> and then run use that version of UEVR to install the <A HREF="https://github.com/jbusfield/DI2_UEVR/releases/latest">current profile</A>. Replace config.txt in the profile with the one <A HREF="https://github.com/jbusfield/DI2_UEVR/blob/main/AFWConfig/config.txt">found here</A>
+Get the Joey build of <A HREF="https://github.com/PureDark/UEVR/releases/tag/UEVR_AFW_v1.0-beta.6">AFW beta 6</A> and then use that version of UEVR to install the <A HREF="https://github.com/jbusfield/DI2_UEVR/releases/latest">current profile</A>. Replace config.txt in the profile with the one <A HREF="https://github.com/jbusfield/DI2_UEVR/blob/main/AFWConfig/config.txt">found here</A>
 
 <img width="558" height="200" alt="DI2_AFW_4" src="https://github.com/user-attachments/assets/3635325f-3368-423f-beac-e0998ceeebd8" />
 
