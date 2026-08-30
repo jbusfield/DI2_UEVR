@@ -261,7 +261,7 @@ local function updateUI(force)
             uevrUtils.setUIFollowsViewOffset(headLockedUIPosition)
             uevrUtils.setUIFollowsViewSize(headLockedUISize)
             uevrUtils.setUIShape(headLockedUIShape - 1)
-        else
+        elseif headLockedUI then
             uevrUtils.setUIFollowsViewOffset({X=0, Y=0, Z=2.0})
             uevrUtils.setUIFollowsViewSize(2.0)
             uevrUtils.setUIShape(0)

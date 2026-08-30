@@ -67,7 +67,7 @@ attachments.setGunstockOffsetsEnabled(false)
 hands.setGunstockOffsetsEnabled(true)
 ik.setGunstockOffsetsEnabled(true)
 
-local versionTxt = "v1.0.3"
+local versionTxt = "v1.0.4"
 local title = "Dead Island 2 First Person Mod " .. versionTxt
 local configDefinition = {
 	{
@@ -118,6 +118,12 @@ local configDefinition = {
                     label = "Raise your left arm in front of your face with palm out to block or dodge",
                 },
                 { widgetType = "unindent", width = 20 },
+                {
+                    widgetType = "checkbox",
+                    id = "physics_portables",
+                    label = "Physics Based Portables",
+                    initialValue = true,
+                },
 				{
 					widgetType = "combo",
 					id = "interaction_control_mode",
@@ -642,6 +648,10 @@ configui.onCreateOrUpdate("left_arm_block_dodge", function(value)
 	end
 end)
 
+configui.onCreateOrUpdate("physics_portables", function(value)
+	portables.usePhysicsBased(value)
+end)
+
 configui.create(configDefinition)
 
 gestures.registerBlockCallback(function(active, hand)
@@ -714,7 +724,3 @@ end)
 -- 	uevrUtils.profiler:report()
 -- end)
 
-register_key_bind("F2", function()
-	print("F2 pressed")
-	print(uevrUtils.isCharacterHidden())
-end)

@@ -2800,9 +2800,11 @@ local function runGripUpdate()
 		M.detachGripAttachments(Handed.Left)
 	end
 
-	--failedAttachments keeps a mesh that cant be attached from endlessly being retried
+	-- failedAttachments stops endless retries: count failures, then true to bail.
+	local maxAttachFails = 3
 	if rightAttachment ~= nil and uevrUtils.getValid(rightAttachment) ~= nil and failedAttachments[rightAttachment:get_full_name()] ~= true then
-		if failedAttachments[rightAttachment:get_full_name()] == nil then failedAttachments[rightAttachment:get_full_name()] = 0 end
+		local rightName = rightAttachment:get_full_name()
+		if failedAttachments[rightName] == nil then failedAttachments[rightName] = 0 end
 		local rightSuccess = false
 		if rightMesh == nil then
 			rightSuccess = M.attachToRawController(rightAttachment, Handed.Right, attachOptionsRight)
@@ -2811,14 +2813,16 @@ local function runGripUpdate()
 		end
 		if not rightSuccess then
 			print("########### Failed to attach right attachment")
-			failedAttachments[rightAttachment:get_full_name()] = failedAttachments[rightAttachment:get_full_name()] + 1
+			local fails = failedAttachments[rightName] + 1
+			failedAttachments[rightName] = fails >= maxAttachFails and true or fails
 		else
-			failedAttachments[rightAttachment:get_full_name()] = 0
+			failedAttachments[rightName] = 0
 		end
 	end
 
 	if leftAttachment ~= nil and uevrUtils.getValid(leftAttachment) ~= nil and failedAttachments[leftAttachment:get_full_name()] ~= true then
-		if failedAttachments[leftAttachment:get_full_name()] == nil then failedAttachments[leftAttachment:get_full_name()] = 0 end
+		local leftName = leftAttachment:get_full_name()
+		if failedAttachments[leftName] == nil then failedAttachments[leftName] = 0 end
 		local leftSuccess = false
 		if leftMesh == nil then
 			leftSuccess = M.attachToRawController(leftAttachment, Handed.Left, attachOptionsLeft)
@@ -2826,9 +2830,10 @@ local function runGripUpdate()
 			leftSuccess = M.attachToMesh(leftAttachment, leftMesh, leftSocketName, Handed.Left, attachOptionsLeft)
 		end
 		if not leftSuccess then
-			failedAttachments[leftAttachment:get_full_name()] = failedAttachments[leftAttachment:get_full_name()] + 1
+			local fails = failedAttachments[leftName] + 1
+			failedAttachments[leftName] = fails >= maxAttachFails and true or fails
 		else
-			failedAttachments[leftAttachment:get_full_name()] = 0
+			failedAttachments[leftName] = 0
 		end
 	end
 	return true

@@ -3621,51 +3621,51 @@ function M.getObjectPropertyDescriptors(object, objName, className, includeChild
     return propertyList
 end
 
-function M.destroyComponent(component, destroyOwner, destroyChildren)
+function M.destroyComponent(component, destroyOwner, destroyChildren, showDebug)
 	if M.validate_object(component) ~= nil then
 		local success, response = pcall(function()
 			local name = component:get_full_name()
-			M.print("[destroyComponent] destroyComponent called for " .. name)
+			if showDebug == true then M.print("[destroyComponent] destroyComponent called for " .. name) end
 
 			if destroyChildren == true then
 				local children = component.AttachChildren
 				if children ~= nil then
-					M.print("[destroyComponent] Found " .. #children .. " children")
+					if showDebug == true then M.print("[destroyComponent] Found " .. #children .. " children") end
 					for i = #children, 1, -1 do
 						-- Never propagate destroyOwner into children: they share the same owner actor.
 						-- Destroying the owner during child recursion can invalidate subsequent UObject calls and crash.
 						M.destroyComponent(children[i], false, destroyChildren)
 					end
 				else
-					M.print("[destroyComponent] No children found")
+					if showDebug == true then M.print("[destroyComponent] No children found") end
 				end
 			end
 
-			M.print("[destroyComponent] Getting component owner for " ..  name)
+			if showDebug == true then M.print("[destroyComponent] Getting component owner for " ..  name) end
 			if component.GetOwner ~= nil then
 				local actor = component:GetOwner()
 				if actor ~= nil then
 					local actorName = actor:get_full_name()
-					M.print("[destroyComponent] Found component owner " .. actorName)
+					if showDebug == true then M.print("[destroyComponent] Found component owner " .. actorName) end
 					if actor.K2_DestroyComponent ~= nil then
 						actor:K2_DestroyComponent(component)
-						M.print("[destroyComponent] Destroyed component " .. name)
+						if showDebug == true then M.print("[destroyComponent] Destroyed component " .. name) end
 					elseif component.K2_DestroyComponent ~= nil then
 						component:K2_DestroyComponent(component)
-						M.print("[destroyComponent] Destroyed component directly " .. name)
+						if showDebug == true then M.print("[destroyComponent] Destroyed component directly " .. name) end
 					end
 					if destroyOwner == nil then destroyOwner = false end
 					if destroyOwner then
 						actor:K2_DestroyActor()
-						M.print("[destroyComponent] Destroyed component owner " .. actorName .. " for " .. name)
+						if showDebug == true then M.print("[destroyComponent] Destroyed component owner " .. actorName .. " for " .. name) end
 					end
 				else
-					M.print("[destroyComponent] Component owner not found")
+					if showDebug == true then M.print("[destroyComponent] Component owner not found") end
 				end
 			end
 		end)
 		if success == false then
-			M.print("[destroyComponent] pcall fail " .. response, LogLevel.Error)
+			if showDebug == true then M.print("[destroyComponent] pcall fail " .. response, LogLevel.Error) end
 		end
 	end
 end

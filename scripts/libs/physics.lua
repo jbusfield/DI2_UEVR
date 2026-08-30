@@ -360,20 +360,22 @@ end
 
 -- Throw: effort-scaled ballistic velocity plus HMD world carry.
 -- Drop (below dropSpeed): HMD carry only, so a still hand while running does not launch.
-function M.getReleaseVelocity(sampler, targetRangeMeters)
+function M.getReleaseVelocity(sampler, targetRangeMeters, showDebug)
     local velocity = M.getThrowVelocity(sampler, targetRangeMeters)
     if sampler ~= nil then
-        print(string.format(
-            "[throw] wristPeak=%.1f  recentPeak=%.1f  last=%.1f  drop=%.0f  fullSpeed=%.0f  hitch=%.0f  effort=%.2f  %s",
-            sampler.peakRawSpeed or 0,
-            sampler.debugRecentPeak or 0,
-            sampler.lastRawSpeed or 0,
-            sampler.dropSpeed or 0,
-            sampler.fullSpeed or 0,
-            sampler.maxSpeed or 0,
-            sampler.debugEffort or 0,
-            velocity == nil and "drop" or "throw"
-        ))
+        if showDebug then
+            print(string.format(
+                "[throw] wristPeak=%.1f  recentPeak=%.1f  last=%.1f  drop=%.0f  fullSpeed=%.0f  hitch=%.0f  effort=%.2f  %s",
+                sampler.peakRawSpeed or 0,
+                sampler.debugRecentPeak or 0,
+                sampler.lastRawSpeed or 0,
+                sampler.dropSpeed or 0,
+                sampler.fullSpeed or 0,
+                sampler.maxSpeed or 0,
+                sampler.debugEffort or 0,
+                velocity == nil and "drop" or "throw"
+            ))
+        end
     end
     local hv = sampler and sampler.hmdVel
     if velocity == nil then

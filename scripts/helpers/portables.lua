@@ -2,8 +2,16 @@ local uevrUtils = require('libs/uevr_utils')
 local attachments = require('libs/attachments')
 local controllers = require('libs/controllers')
 local physics = require('libs/physics')
+local reticule = require('libs/reticule')
+local mathLib = require('libs/core/math_lib')
 
 local M = {}
+
+local useVanilla = false
+
+function M.usePhysicsBased(value)
+	useVanilla = not value
+end
 
 -- Max range at a full-speed swing: 20 * THROW_GAIN / weightKg (gain 5, 10 kg -> 10 m).
 -- Wrist speed between dropSpeed and fullSpeed (measured max flick ~704) scales that range.
@@ -12,8 +20,10 @@ local DEFAULT_THROW_MASS = 2
 local NORMAL_THROW_KG_METERS = 20.0
 local THROW_LOCKOUT_MS = 1000
 local ATTACH_NO_COLLISION_MS = 1000
-local DOCK_WAIT_FRAMES = 10
 local TRIGGER_THRESHOLD = 128
+local AIM_OFFSET_YAW = -27
+local AIM_OFFSET_PITCH = 10
+local THROW_LOFT_PITCH = 15
 
 local throwing = false
 local throwingCallbacks = {}
@@ -37,6 +47,7 @@ local portableDrop = {
 	hmdCopy = nil,
 	pending = nil,
 	wait = 0,
+	releaseVelocity = nil,
 }
 
 local attachCollisionMesh = nil
@@ -50,10 +61,8 @@ local function restorePortableAttachCollision()
 	if uevrUtils.getValid(mesh) == nil then
 		return
 	end
-	pcall(function()
-	---@diagnostic disable-next-line: undefined-field, need-check-nil
-		mesh:SetCollisionEnabled(ECollisionEnabled.QueryAndPhysics)
-	end)
+	---@diagnostic disable-next-line: need-check-nil, undefined-field
+	mesh:SetCollisionEnabled(ECollisionEnabled.QueryAndPhysics)
 end
 
 local function beginPortableAttachNoCollision(mesh)
@@ -64,14 +73,12 @@ local function beginPortableAttachNoCollision(mesh)
 		restorePortableAttachCollision()
 	end
 	attachCollisionMesh = mesh
-	pcall(function()
-		mesh:SetCollisionEnabled(ECollisionEnabled.NoCollision)
-	end)
+	---@diagnostic disable-next-line: need-check-nil, undefined-field
+	mesh:SetCollisionEnabled(ECollisionEnabled.NoCollision)
 	uevrUtils.updateDeferral("portable_attach")
 end
 
 local function getHoldingPortable()
-	local pawn = uevrUtils.get_local_pawn()
 	if pawn == nil or pawn.IsHoldingCarryable == nil then
 		return nil
 	end
@@ -120,22 +127,16 @@ local function setThrowing(value)
 	end
 end
 
--- Batteries and circuit breakers dock into slots; the game then owns the actor.
 local function isPortableDocked(carryable)
-	local docked = false
-	pcall(function()
-		if uevrUtils.getValid(carryable) == nil then
-			return
-		end
-		if carryable:IsDocked() == true then
-			docked = true
-			return
-		end
-		local owner = carryable:GetOwner()
-		local dockable = owner ~= nil and owner.Dockable or nil
-		docked = dockable ~= nil and dockable.RepDockedWith ~= nil
-	end)
-	return docked
+	if uevrUtils.getValid(carryable) == nil then
+		return false
+	end
+	if carryable:IsDocked() == true then
+		return true
+	end
+	local owner = carryable:GetOwner()
+	local dockable = owner ~= nil and owner.Dockable or nil
+	return dockable ~= nil and dockable.RepDockedWith ~= nil
 end
 
 local function clearPortableDrop()
@@ -145,6 +146,7 @@ local function clearPortableDrop()
 	portableDrop.carryable = nil
 	portableDrop.lastMeshLoc = nil
 	portableDrop.wait = 0
+	portableDrop.releaseVelocity = nil
 	physics.resetThrowSampler(throwSampler)
 end
 
@@ -152,40 +154,20 @@ local function applyPortableDrop(pending)
 	if isPortableDocked(pending.carryable) then
 		return true
 	end
-	if pending.dockWait > 0 then
-		pending.dockWait = pending.dockWait - 1
-		return false
-	end
-	if pending.armed ~= true then
-		pending.armed = true
-		setThrowing(true)
-		uevrUtils.updateDeferral("portable_throwing")
-	end
 	local mesh = pending.mesh
 	if uevrUtils.getValid(mesh) == nil then
 		return true
 	end
 	if mesh.AttachParent ~= nil then
-		pcall(function()
-			mesh:DetachFromParent(true, false)
-		end)
-	end
-	if mesh.AttachParent ~= nil then
-		return false
+		mesh:DetachFromParent(true, false)
 	end
 
-	if pending.placed ~= true then
-		local loc = pending.loc
-		if loc ~= nil and (loc.X * loc.X + loc.Y * loc.Y + loc.Z * loc.Z) > 1 then
-			pcall(function()
-				mesh:K2_SetWorldLocation(uevrUtils.vector(loc.X, loc.Y, loc.Z), false, reusable_hit_result, true)
-			end)
-		end
-		pending.placed = true
-		return false
+	local loc = pending.loc
+	if loc ~= nil and (loc.X * loc.X + loc.Y * loc.Y + loc.Z * loc.Z) > 1 then
+		mesh:K2_SetWorldLocation(uevrUtils.vector(loc.X, loc.Y, loc.Z), false, reusable_hit_result, true)
 	end
-
 	restorePortableAttachCollision()
+	mesh:SetCollisionResponseToChannel(ECollisionChannel.ECC_Pawn, ECollisionResponse.Ignore)
 	physics.applyThrowVelocity(mesh, pending.velocity)
 	return true
 end
@@ -195,6 +177,7 @@ local function updateHoldSampling(portable, delta)
 		portableDrop.holding = true
 		portableDrop.pending = nil
 		portableDrop.wait = 0
+		portableDrop.releaseVelocity = nil
 		throwSampler.idleDelta = 0
 	end
 	portableDrop.carryable = portable
@@ -244,29 +227,34 @@ local function updateHoldSampling(portable, delta)
 	physics.updateThrowSampler(throwSampler, loc, hmdLoc, delta)
 end
 
+local function captureWristVelocity()
+	local kg = attachments.getAttachmentWeight(portableDrop.mesh)
+	if kg == 0 then
+		kg = DEFAULT_THROW_MASS
+	end
+	portableDrop.releaseVelocity = physics.getReleaseVelocity(throwSampler, NORMAL_THROW_KG_METERS * THROW_GAIN / kg)
+end
+
 local function onPortableReleased()
+	setThrowing(true)
+	uevrUtils.updateDeferral("portable_throwing")
 	local mesh = portableDrop.mesh
 	local loc = portableDrop.lastMeshLoc or throwSampler.lastHandLoc
 	local velocity = nil
-	local dockWait = 0
 	if leftTriggerHeld then
 		loc = pendingThrowAimLoc or loc
 		local rot = pendingThrowAimRot
 		local speed = 0
-		pcall(function()
-			local carryable = portableDrop.carryable
-			if carryable ~= nil and carryable.InitialThrowSpeed ~= nil then
-				speed = carryable.InitialThrowSpeed
-			end
-		end)
+		local carryable = portableDrop.carryable
+		if carryable ~= nil and carryable.InitialThrowSpeed ~= nil then
+			speed = carryable.InitialThrowSpeed
+		end
 		if speed < 1 and uevrUtils.getValid(mesh) ~= nil then
-			pcall(function()
-				---@diagnostic disable-next-line: need-check-nil
-				local current = mesh:GetPhysicsLinearVelocity()
-				if current ~= nil then
-					speed = math.sqrt((current.X or 0) * (current.X or 0) + (current.Y or 0) * (current.Y or 0) + (current.Z or 0) * (current.Z or 0))
-				end
-			end)
+			---@diagnostic disable-next-line: need-check-nil
+			local current = mesh:GetPhysicsLinearVelocity()
+			if current ~= nil then
+				speed = math.sqrt((current.X or 0) * (current.X or 0) + (current.Y or 0) * (current.Y or 0) + (current.Z or 0) * (current.Z or 0))
+			end
 		end
 		local forward = rot ~= nil and uevrUtils.getForwardVector(uevrUtils.rotator(rot)) or nil
 		if forward ~= nil and speed >= 1 then
@@ -275,26 +263,17 @@ local function onPortableReleased()
 		pendingThrowAimLoc = nil
 		pendingThrowAimRot = nil
 	else
-		local kg = attachments.getAttachmentWeight(mesh)
-		if kg == 0 then
-			kg = DEFAULT_THROW_MASS
+		velocity = portableDrop.releaseVelocity
+		if velocity == nil then
+			captureWristVelocity()
+			velocity = portableDrop.releaseVelocity
 		end
-		velocity = physics.getReleaseVelocity(throwSampler, NORMAL_THROW_KG_METERS * THROW_GAIN / kg)
-		pcall(function()
-			local owner = portableDrop.carryable ~= nil and portableDrop.carryable:GetOwner() or nil
-			if owner ~= nil and owner.Dockable ~= nil then
-				dockWait = DOCK_WAIT_FRAMES
-			end
-		end)
 	end
 	portableDrop.pending = {
 		mesh = mesh,
 		carryable = portableDrop.carryable,
 		loc = loc,
 		velocity = velocity,
-		placed = false,
-		dockWait = dockWait,
-		armed = false,
 	}
 	portableDrop.holding = false
 	portableDrop.mesh = nil
@@ -326,9 +305,8 @@ local function updatePortableDrop(delta)
 		clearPortableDrop()
 		return
 	end
-
 	portableDrop.wait = portableDrop.wait + 1
-	if applyPortableDrop(pending) or (pending.dockWait <= 0 and portableDrop.wait > 20) then
+	if applyPortableDrop(pending) or portableDrop.wait > 20 then
 		clearPortableDrop()
 	end
 end
@@ -358,8 +336,30 @@ uevrUtils.createDeferral("portable_attach", ATTACH_NO_COLLISION_MS, function()
 	end
 end)
 
+local status = {}
 uevr.sdk.callbacks.on_xinput_get_state(function(retval, user_index, state)
-	leftTriggerHeld = state.Gamepad.bLeftTrigger > TRIGGER_THRESHOLD
+	--if not useVanilla then
+		leftTriggerHeld = state.Gamepad.bLeftTrigger > TRIGGER_THRESHOLD
+		if getHoldingPortable() ~= nil then
+			if status.isThrowing ~= leftTriggerHeld then
+				status.isThrowing = leftTriggerHeld
+				if status.isThrowing then
+					--print("Reticule: Right Controller")
+					reticule.setTargetMethod(reticule.ReticuleTargetMethod.RIGHT_CONTROLLER)
+					reticule.setTargetRotationOffset({Pitch=-AIM_OFFSET_PITCH, Yaw=AIM_OFFSET_YAW, Roll=0})
+				else
+					reticule.setTargetMethod(reticule.ReticuleTargetMethod.RIGHT_ATTACHMENT)
+					reticule.setTargetRotationOffset({Pitch=0, Yaw=0, Roll=0})
+				end
+			end
+		else
+			if status.isThrowing then
+				status.isThrowing = false
+				reticule.setTargetMethod(reticule.ReticuleTargetMethod.RIGHT_ATTACHMENT)
+				reticule.setTargetRotationOffset({Pitch=0, Yaw=0, Roll=0})
+			end
+		end
+	--end
 end)
 
 -- Capture while the grip still exists. ServerRequestThrowCarryable never hits Lua.
@@ -371,20 +371,78 @@ local function captureThrowAim()
 	pendingThrowAimLoc = uevrUtils.vector(loc.X, loc.Y, loc.Z)
 	local rot = controllers.getControllerRotation(Handed.Right)
 	if rot ~= nil then
-		pendingThrowAimRot = uevrUtils.rotator(rot.Pitch, rot.Yaw, rot.Roll)
+		-- Match reticule aim (local offset then controller), then loft in world pitch for gravity.
+		local aimRot = mathLib.composeRotators(uevrUtils.rotator(-AIM_OFFSET_PITCH, AIM_OFFSET_YAW, 0), rot)
+		local forward = uevrUtils.getForwardVector(aimRot)
+		local worldAim = kismet_math_library:Conv_VectorToRotator(forward)
+		worldAim.Pitch = worldAim.Pitch + THROW_LOFT_PITCH
+		pendingThrowAimRot = worldAim
+	end
+end
+
+local function applyControllerPitchToGameThrow()
+	if pendingThrowAimRot ~= nil and pawn ~= nil and pawn.GetPlayerCameraManager ~= nil then
+		local pcm = pawn:GetPlayerCameraManager()
+		local rotation = uevrUtils.getValid(pcm,{"CameraCachePrivate","POV","Rotation"})
+		if rotation ~= nil then
+			rotation.Pitch = pendingThrowAimRot.Pitch
+			rotation.Yaw = pendingThrowAimRot.Yaw
+		end
 	end
 end
 
 hook_function("Class /Script/DeadIsland.CarryThrowAction", "OnThrowCarryable", true,
 	function(fn, obj, locals)
 		captureThrowAim()
+		if useVanilla then
+			applyControllerPitchToGameThrow()
+			attachments.detachGripAttachments(Handed.Right)
+		else
+			if not leftTriggerHeld then
+				captureWristVelocity()
+			end
+			setThrowing(true)
+			uevrUtils.updateDeferral("portable_throwing")
+		end
+	end,
+	nil,
+	false
+)
+
+hook_function("Class /Script/DeadIsland.DIPlayerCharacter", "RequestCarryDeselect", true,
+	function(fn, obj, locals)
+		if not useVanilla and not leftTriggerHeld and portableDrop.holding then
+			captureWristVelocity()
+		end
 	end,
 	nil,
 	false
 )
 
 uevr.sdk.callbacks.on_post_engine_tick(function(engine, delta)
-	updatePortableDrop(delta)
+	if not useVanilla then
+		updatePortableDrop(delta)
+	end
 end)
+
+local function hookFunctions()
+	-- Y weapon-switch ends carry hold while the portable is still gripped.
+	hook_function("BlueprintGeneratedClass /Game/DI2/Player/Actions/Carry/BP_Action_Player_CarryHold.BP_Action_Player_CarryHold_C", "OnEnd", false,
+		function(fn, obj, locals)
+			if useVanilla and getHoldingPortable() ~= nil then
+				attachments.detachGripAttachments(Handed.Right)
+			elseif not useVanilla and not leftTriggerHeld and portableDrop.holding then
+				captureWristVelocity()
+			end
+		end,
+		nil,
+		false
+	)
+end
+
+uevrUtils.registerLevelChangeCallback(function(level)
+	hookFunctions()
+end)
+
 
 return M

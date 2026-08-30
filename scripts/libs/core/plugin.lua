@@ -63,9 +63,12 @@
             local gameKey = mappingData["Key"]["KeyName"]
             print("Mapping found for key:", mappingData["ActionName"], gameKey)
         end
+        -- Dotted path into a StructProperty on a UObject:
+        --   plugin.getProperty(niagaraSystem, "ExposedParameters.SortedParameterOffsets")
 
         -- ############# SetProperty example ##############
-        --   Set a field, map entry, or array element. Same indexed syntax as getProperty.
+        --   Set a field, map entry, or array element.
+        --   Same path syntax as getProperty: "Field", "Struct.Field", "Map[Key]", "Arr[2]", "A.B[Key]"
         --   Returns nothing; failures are printed to the log.
         -- ##############################################
 
@@ -80,11 +83,14 @@
 	    local iconsData = uevrUtils.find_required_object(XBOX_ICONS_DATA)
         local XBOX_RB_TEXTURE = "Texture2D /Game/UI/Art/FrontEnd/General/Navigation/Xbox/T_Button_Xbox_RB.T_Button_Xbox_RB"
 	    local rbTexture = uevrUtils.find_required_object(XBOX_RB_TEXTURE)
-        plugin.setProperty(iconsData, "Icons[Gamepad_FaceButton_Left]", rbTexture)
         
-        plugin.setProperty(someActor, "ChildArray[2]", newElement)
+        plugin.setProperty(iconsData, "Icons[Gamepad_FaceButton_Left]", rbTexture) -- access map elements
         
-        plugin.setProperty(someObject, "Opacity", 1.5)
+        plugin.setProperty(someActor, "ChildArray[2]", newElement) -- access array elements
+        
+        plugin.setProperty(someObject, "Opacity", 1.5) -- access scalar properties
+
+        plugin.setProperty(someObject, "Materials.Opacity", 1.5) -- access nested properties
 
 
 ]]--
