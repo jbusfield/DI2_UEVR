@@ -67,7 +67,7 @@ attachments.setGunstockOffsetsEnabled(false)
 hands.setGunstockOffsetsEnabled(true)
 ik.setGunstockOffsetsEnabled(true)
 
-local versionTxt = "v1.0.4"
+local versionTxt = "v1.0.5"
 local title = "Dead Island 2 First Person Mod " .. versionTxt
 local configDefinition = {
 	{
