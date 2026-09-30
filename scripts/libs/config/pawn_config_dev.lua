@@ -243,7 +243,7 @@ local function getConfigWidgets(m_paramManager)
 end
 
 local function updateSetting(key, value)
-    uevrUtils.executeUEVRCallbacks("on_pawn_config_param_change", key, value)
+    uevrUtils.executeUEVRCallbacks("on_pawn_config_param_change", key, value, true)
 end
 
 local function setPawnUpperArmLeft(value)
@@ -269,13 +269,13 @@ local function setBoneNames()
 		configui.setSelections(widgetPrefix .. "pawnUpperArmLeft", boneList)
 		configui.setSelections(widgetPrefix .. "pawnUpperArmRight", boneList)
 	end
-	local currentBoneIndex = configui.getValue(widgetPrefix .. "pawnUpperArmLeft")
-	if currentBoneIndex ~= nil and currentBoneIndex > 1 then
-		setPawnUpperArmLeft(currentBoneIndex)
-	end
-	currentBoneIndex = configui.getValue(widgetPrefix .. "pawnUpperArmRight")
-	if currentBoneIndex ~= nil and  currentBoneIndex > 1 then
-		setPawnUpperArmRight(currentBoneIndex)
+	-- Re-sync combo indices from the active profile only. Do not write back —
+	-- writing here on profile switch overwrites the new profile with stale indices.
+	if paramManager ~= nil then
+		local left = paramManager:getFromActiveProfile("pawnUpperArmLeft")
+		local right = paramManager:getFromActiveProfile("pawnUpperArmRight")
+		configui.setValue(widgetPrefix .. "pawnUpperArmLeft", uevrUtils.indexOf(boneList, left) or 1, true)
+		configui.setValue(widgetPrefix .. "pawnUpperArmRight", uevrUtils.indexOf(boneList, right) or 1, true)
 	end
 end
 

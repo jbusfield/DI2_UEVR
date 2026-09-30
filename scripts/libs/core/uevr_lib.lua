@@ -13,7 +13,7 @@ end
 function M.find_required_object(name)
     local obj = uevr.api:find_uobject(name)
     if not obj then
-        print("Cannot find " .. name)
+        print("[CoreLib]Can not find required object:" .. name)
         return nil
     end
 

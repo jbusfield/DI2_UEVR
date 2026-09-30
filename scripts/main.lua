@@ -67,7 +67,7 @@ attachments.setGunstockOffsetsEnabled(false)
 hands.setGunstockOffsetsEnabled(true)
 ik.setGunstockOffsetsEnabled(true)
 
-local versionTxt = "v1.0.5"
+local versionTxt = "v1.0.6"
 local title = "Dead Island 2 First Person Mod " .. versionTxt
 local configDefinition = {
 	{
@@ -410,8 +410,9 @@ attachments.registerAttachmentChangeCallback(function(id, gripHand, attachment)
 		attachment:SetCollisionResponseToChannel(5, ECollisionResponse.Block)
 		attachment:SetCollisionResponseToChannel(15, ECollisionResponse.Block)
 	end
-	gestures.autoDetectGesture(gestures.Gesture.SWIPE_RIGHT, isMeleeWeapon, gripHand)
-	gestures.autoDetectGesture(gestures.Gesture.SWIPE_LEFT, isMeleeWeapon, gripHand)
+	gestures.autoDetectGesture(gestures.Gesture.SWING, isMeleeWeapon, gripHand)
+--	gestures.autoDetectGesture(gestures.Gesture.SWIPE_RIGHT, isMeleeWeapon, gripHand)
+--	gestures.autoDetectGesture(gestures.Gesture.SWIPE_LEFT, isMeleeWeapon, gripHand)
 end)
 
 local equippedItemsWheelClass = "BlueprintGeneratedClass /Game/DI2/UI/HUD/Objects/WeaponWheel/BP_HUDObject_EquippedItemsWheel.BP_HUDObject_EquippedItemsWheel_C"
@@ -429,10 +430,14 @@ end
 function on_level_change(level, levelName)
 	hideReticule(true)
 	regenerateHands(configui.getValue("hands_type"))
-	gestures.autoDetectGesture(gestures.Gesture.SWIPE_RIGHT, false, Handed.Left)
-	gestures.autoDetectGesture(gestures.Gesture.SWIPE_LEFT, false, Handed.Left)
-	gestures.autoDetectGesture(gestures.Gesture.SWIPE_RIGHT, false, Handed.Right)
-	gestures.autoDetectGesture(gestures.Gesture.SWIPE_LEFT, false, Handed.Right)
+	-- gestures.autoDetectGesture(gestures.Gesture.SWIPE_RIGHT, false, Handed.Left)
+	-- gestures.autoDetectGesture(gestures.Gesture.SWIPE_LEFT, false, Handed.Left)
+	-- gestures.autoDetectGesture(gestures.Gesture.SWIPE_RIGHT, false, Handed.Right)
+	-- gestures.autoDetectGesture(gestures.Gesture.SWIPE_LEFT, false, Handed.Right)
+
+	gestures.autoDetectGesture(gestures.Gesture.SWING, false, Handed.Right)
+	gestures.autoDetectGesture(gestures.Gesture.SWING, false, Handed.Left)
+
 	flashlight.reset()
 	flashlight.updateFlashlightOffsetVisibility()
 	flashlight.attachFlashlightToController(true)

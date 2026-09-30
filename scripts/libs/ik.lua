@@ -580,12 +580,21 @@ local function getTargetLocationAndRotation(hand, controller)
 		end
     else
         local handStatus = accessoryStatus[hand]
-        if uevrUtils.getValid(handStatus.parentAttachment) ~= nil then
-            if handStatus.parentAttachment.GetSocketLocation == nil then
-                print("IK accessory parent attachment has no GetSocketLocation:", handStatus.parentAttachment:get_full_name())
+        local target = uevrUtils.getValid(handStatus.parentAttachment)
+        if target ~= nil then
+            -- Keep the existing socket path; only fall back to the component
+            -- transform for a blank socket name when socket getters are absent.
+            if target.GetSocketLocation ~= nil and target.GetSocketRotation ~= nil then
+                loc = target:GetSocketLocation(uevrUtils.fname_from_string(handStatus.socketName or ""))
+                rot = target:GetSocketRotation(uevrUtils.fname_from_string(handStatus.socketName or ""))
+            elseif (handStatus.socketName == nil or handStatus.socketName == "")
+                and target.K2_GetComponentLocation ~= nil and target.K2_GetComponentRotation ~= nil then
+                loc = target:K2_GetComponentLocation()
+                rot = target:K2_GetComponentRotation()
             else
-                loc = handStatus.parentAttachment:GetSocketLocation(uevrUtils.fname_from_string(handStatus.socketName or ""))
-                rot = handStatus.parentAttachment:GetSocketRotation(uevrUtils.fname_from_string(handStatus.socketName or ""))
+                print("IK accessory target has no usable transform:", target:get_full_name())
+            end
+            if loc ~= nil and rot ~= nil then
                 --print("Socket",loc.X, loc.Y, loc.Z)
 				--print("Controller",controller:K2_GetComponentLocation().X, controller:K2_GetComponentLocation().Y, controller:K2_GetComponentLocation().Z)
 				if handStatus.loc ~= nil and handStatus.rot ~= nil then

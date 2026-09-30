@@ -94,16 +94,17 @@ Usage
             ui.removeViewportWidget(myWidget)
 
     ui.registerWidgetChangeCallback(widgetName, func) - registers a callback for when specific high level 
-        viewport widgets become active/inactive. The widgetName can be found in the UI interface list
+        viewport widgets become active/inactive. The widgetName can be found in the UI interface list.
+        Callback receives (active, widget). widget is the live viewport instance when active, else nil.
         example:
-            ui.registerWidgetChangeCallback("WBP_UniversalLockTooltipWidget_C", function(active)
-                print("Widget changed:", active)
+            ui.registerWidgetChangeCallback("WBP_UniversalLockTooltipWidget_C", function(active, widget)
+                print("Widget changed:", active, widget)
             end)
 
     ui.onUpdate(stateKey, func) - registers a callback invoked when a UI state value changes.
         Callback receives (value, priority). value may be true, false, or nil (default/cleared).
-        Valid stateKey values: viewLocked, screen2D, decouplePitch, autoAdjustUI, inputEnabled,
-        handsEnabled, remapEnabled, fadeCamera, pawnArmBones
+        Valid stateKey values: viewLocked, screen2D, roomscaleEnabled, decouplePitch, autoAdjustUI, inputEnabled,
+        handsEnabled, remapEnabled, fadeCamera, pawnArmBones, controllerMouse
         example:
             ui.onUpdate("remapEnabled", function(value)
                 print("remapEnabled changed:", value)
@@ -147,6 +148,14 @@ Usage
         example:
             local enabled, priority = ui.isFadeCameraEnabledWithPriority()
 
+    ui.isControllerMouseEnabled() - returns true if UI state currently enables the controller mouse
+        example:
+            if ui.isControllerMouseEnabled() then return end
+
+    ui.isControllerMouseEnabledWithPriority() - returns enabled state (or nil) and priority for controller-mouse callbacks
+        example:
+            local enabled, priority = ui.isControllerMouseEnabledWithPriority()
+
     ui.forceUpdate() - immediately recalculates UI state and applies view/UI settings
         example:
             ui.forceUpdate()
@@ -187,25 +196,29 @@ local uiState = {viewLocked = nil, screen2D = nil, decouplePitch = nil, inputEna
 local stateConfigWidget = {
     {stateKey = "viewLocked", valueKey = "lockedUIWhenActive"},
     {stateKey = "screen2D", valueKey = "screen2DWhenActive"},
+    {stateKey = "roomscaleEnabled", valueKey = "roomscaleWhenActive"},
     {stateKey = "decouplePitch", valueKey = "decouplePitchWhenActive"},
     {stateKey = "autoAdjustUI", valueKey = "autoAdjustUIWhenActive"},
     {stateKey = "inputEnabled", valueKey = "inputWhenActive"},
     {stateKey = "handsEnabled", valueKey = "handsWhenActive"},
     {stateKey = "remapEnabled", valueKey = "remapWhenActive"},
     {stateKey = "fadeCamera", valueKey = "fadeCameraWhenActive"},
-    {stateKey = "pawnArmBones", valueKey = "pawnArmBonesWhenActive"}
+    {stateKey = "pawnArmBones", valueKey = "pawnArmBonesWhenActive"},
+    {stateKey = "controllerMouse", valueKey = "controllerMouseWhenActive"}
 }
 
 local stateConfigGame = {
     {stateKey = "viewLocked", valueKey = "lockedUIWhenInGameState"},
     {stateKey = "screen2D", valueKey = "screen2DWhenInGameState"},
+    {stateKey = "roomscaleEnabled", valueKey = "roomscaleWhenInGameState"},
     {stateKey = "decouplePitch", valueKey = "decouplePitchWhenInGameState"},
     {stateKey = "autoAdjustUI", valueKey = "autoAdjustUIWhenInGameState"},
     {stateKey = "inputEnabled", valueKey = "inputWhenInGameState"},
     {stateKey = "handsEnabled", valueKey = "handsWhenInGameState"},
     {stateKey = "remapEnabled", valueKey = "remapWhenInGameState"},
     {stateKey = "fadeCamera", valueKey = "fadeCameraWhenInGameState"},
-    {stateKey = "pawnArmBones", valueKey = "pawnArmBonesWhenInGameState"}
+    {stateKey = "pawnArmBones", valueKey = "pawnArmBonesWhenInGameState"},
+    {stateKey = "controllerMouse", valueKey = "controllerMouseWhenInGameState"}
 }
 
 local gameStates = {"cutscene", "paused", "character_hidden"}
@@ -284,9 +297,21 @@ local function updateUI(force)
         --M.print("Setting 2D mode to " .. tostring(viewportWidgetState["screen2D"]))
     end
 
+    if uiState["roomscaleEnabled_last"] ~= uiState["roomscaleEnabled"] then
+        if uiState["roomscaleEnabled_last"] == nil then
+            uiState["roomscaleEnabled_cache"] = uevrUtils.get_roomscale_active()
+        end
+        if uiState["roomscaleEnabled"] == nil then
+            uevrUtils.set_roomscale_active(uiState["roomscaleEnabled_cache"])
+        else
+            uevrUtils.set_roomscale_active(uiState["roomscaleEnabled"])
+        end
+        uiState["roomscaleEnabled_last"] = uiState["roomscaleEnabled"]
+    end
+
     if uiState["fadeCamera_last"] ~= uiState["fadeCamera"] then
         if uiState["fadeCamera"] == true then
-            uevrUtils.fadeCamera(0.1, true)
+            uevrUtils.fadeCamera(0.1, true, false, true)
         else
             uevrUtils.stopFadeCamera()
         end
@@ -352,6 +377,13 @@ function M.isFadeCameraEnabled()
     return uiState["fadeCamera"] ~= nil and uiState["fadeCamera"] or false
 end
 
+function M.isControllerMouseEnabledWithPriority()
+    return uevrUtils.ternary(uiState["controllerMouse"] ~= nil, uiState["controllerMouse"], nil), uiState["controllerMousePriority"]
+end
+function M.isControllerMouseEnabled()
+    return uiState["controllerMouse"] ~= nil and uiState["controllerMouse"] or false
+end
+
 function M.isInputDisabledWithPriority()
     return uiState["inputEnabled"] ~= nil and (not uiState["inputEnabled"]) or nil, uiState["inputEnabledPriority"]
 end
@@ -382,6 +414,10 @@ uevrUtils.registerUEVRCallback("is_hands_hidden", function()
 	return uiState["handsEnabled"] ~= nil and (not uiState["handsEnabled"]) or nil, uiState["handsEnabledPriority"]
 end)
 
+uevrUtils.registerUEVRCallback("is_controller_mouse_enabled", function()
+    return M.isControllerMouseEnabledWithPriority()
+end)
+
 local customUIState = {}
 function M.setCustomState(stateKey, value, priority)
     if stateKey ~= nil then
@@ -408,16 +444,19 @@ end
 
 local newWidgetViewportState = {}
 local function updateWidgetChangeCallbacks()
-    for id, isInViewport in pairs(newWidgetViewportState) do
-        if currentWidgetViewportState[id] ~= isInViewport then
-            currentWidgetViewportState[id] = isInViewport
-            M.print("Widget " .. id .. " change, isInViewport = " .. tostring(isInViewport))
-            uevrUtils.executeUEVRCallbacks("widget_change_" .. id, isInViewport)
-        end
-    end
-    for id, isInViewport in pairs(currentWidgetViewportState) do
-       newWidgetViewportState[id] = false
-    end
+	for id, entry in pairs(newWidgetViewportState) do
+		local active = entry and true or false
+		local wasActive = currentWidgetViewportState[id] and true or false
+		if wasActive ~= active then
+			currentWidgetViewportState[id] = active
+			local widget = active and entry or nil
+			M.print("Widget " .. id .. " change, isInViewport = " .. tostring(active))
+			uevrUtils.executeUEVRCallbacks("widget_change_" .. id, active, widget)
+		end
+	end
+	for id, _ in pairs(currentWidgetViewportState) do
+		newWidgetViewportState[id] = false
+	end
 end
 
 local function setCurrentViewportWidgetsStr(str)
@@ -475,7 +514,7 @@ local function updateUIState()
                         for _, config in ipairs(stateConfigWidget) do
                             updateStateIfHigherPriority(data, config.stateKey, config.valueKey)
                         end
-                        newWidgetViewportState[data["label"]] = true
+                        newWidgetViewportState[data["label"]] = widget
                         uevrUtils.setWidgetLayout(widget, data["scale"], data["alignment"])
                         --updateCurrentWidgetChangeCallbackState(data["label"], true)
                     end
@@ -756,7 +795,12 @@ end)
 uevrUtils.registerPreLevelChangeCallback(function(level)
 	isInMotionSicknessCausingSceneLast = false
     uevrUtils.enableCameraLerp(false, true, true, true)
+    -- Level loads clear the engine fade while fadeCamera_last can stay true; force re-apply.
+    uiState["fadeCamera_last"] = nil
+end)
 
+uevrUtils.registerLevelChangeCallback(function(level)
+    M.forceUpdate()
 end)
 
 return M

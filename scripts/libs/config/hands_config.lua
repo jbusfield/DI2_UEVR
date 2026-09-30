@@ -1511,7 +1511,8 @@ local function updateHands()
 			if rot ~= nil then
 				hands.setOffset({X=0, Y=0, Z=0, Pitch=rot.X, Yaw=rot.Y, Roll=rot.Z})
 			end
-			hands.setIgnoreRelativeOffset(configui.getValue("ignore_relative_offset"))
+			hands.setIgnoreRelativeOffset(configui.getValue("mesh_rotation_ignore_relative"))
+			--hands.setIgnoreRelativeOffset(configui.getValue("ignore_relative_offset"))
 			hands.debug(getMeshComponent(), nil, nil, true)
 
 			local fovParam = configui.getValue("fov_param_name")

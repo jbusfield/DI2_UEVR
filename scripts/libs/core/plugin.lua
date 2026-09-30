@@ -210,6 +210,18 @@ local function convertResultDataType(dataType, dataValue)
             return dataValue
         end
 
+    -- SetProperty arrives as an array of property blocks (same shape as ArrayProperty)
+    elseif dataType == "SetProperty" then
+        if type(dataValue) == "table" then
+            local arr = {}
+            for i, v in ipairs(dataValue) do
+                arr[i] = M.convertResultData(v)
+            end
+            return arr
+        else
+            return dataValue
+        end
+
     else
         return dataValue
     end
@@ -429,6 +441,102 @@ function M.setProperty(callerObject, propertyName, value)
 
     -- Void: errors already printed in on_lua_event; success has no caller payload
     AsyncRegistry[callID] = nil
+end
+
+-- Parse UEVR hook `result` lightuserdata (or accept a number address).
+function M.hookPtrAddress(ud)
+    if ud == nil then return nil end
+    if type(ud) == "number" then return ud end
+    local hex = tostring(ud):match("(%x+)$")
+    if not hex then return nil end
+    return tonumber(hex, 16)
+end
+
+-- Typed write into a UFunction hook `result` (and optional locals out-params).
+-- Fire-and-forget: no Lua reply (safe inside UFunction pre-hooks).
+--   plugin.writeHookResult(fn, result, value)
+--   plugin.writeHookResult(fn, result, value, locals)           -- also write named out-params from value table extras
+--   plugin.writeHookResult(fn, result, value, locals, extras)   -- extras = { OutParam = ... }
+function M.writeHookResult(fn, result, value, locals, extras)
+    if fn == nil or result == nil or value == nil then
+        print("[plugin]Error: writeHookResult requires fn, result, and value")
+        return
+    end
+    local fnAddr = fn
+    if type(fn) ~= "number" then
+        if fn.get_address == nil then
+            print("[plugin]Error: writeHookResult fn must be a UFunction or address")
+            return
+        end
+        fnAddr = fn:get_address()
+    end
+    local resultAddr = M.hookPtrAddress(result)
+    if resultAddr == nil then
+        print("[plugin]Error: writeHookResult could not parse result address")
+        return
+    end
+
+    local valueParams = { value }
+    convertInputParams(valueParams)
+
+    local data = {
+        debug = M.showDebug,
+        ["function"] = fnAddr,
+        result_address = resultAddr,
+        value = valueParams[1],
+    }
+    if locals ~= nil then
+        local localsAddr = M.hookPtrAddress(locals)
+        if localsAddr == nil and type(locals) == "userdata" and locals.get_address then
+            localsAddr = locals:get_address()
+        end
+        if localsAddr ~= nil then
+            data.locals_address = localsAddr
+        end
+    end
+    if type(extras) == "table" then
+        local extraParams = { extras }
+        convertInputParams(extraParams)
+        for k, v in pairs(extraParams[1]) do
+            data[k] = v
+        end
+    end
+    uevr.api:dispatch_custom_event("WriteHookResult", json.dump_string(data))
+end
+
+-- Write named out/in params into hook locals (same fire-and-forget event).
+function M.writeHookLocals(fn, locals, values)
+    if fn == nil or locals == nil or values == nil then
+        print("[plugin]Error: writeHookLocals requires fn, locals, and values table")
+        return
+    end
+    local fnAddr = fn
+    if type(fn) ~= "number" then
+        if fn.get_address == nil then
+            print("[plugin]Error: writeHookLocals fn must be a UFunction or address")
+            return
+        end
+        fnAddr = fn:get_address()
+    end
+    local localsAddr = M.hookPtrAddress(locals)
+    if localsAddr == nil and type(locals) == "userdata" and locals.get_address then
+        localsAddr = locals:get_address()
+    end
+    if localsAddr == nil then
+        print("[plugin]Error: writeHookLocals could not parse locals address")
+        return
+    end
+    local valueParams = { values }
+    convertInputParams(valueParams)
+    local data = {
+        debug = M.showDebug,
+        ["function"] = fnAddr,
+        locals_address = localsAddr,
+    }
+    for k, v in pairs(valueParams[1]) do
+        data[k] = v
+    end
+    uevr.api:dispatch_custom_event("WriteHookResult", json.dump_string(data))
 end
 
 function M.addComponent(actorObject, componentClass)

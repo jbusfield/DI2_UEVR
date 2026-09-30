@@ -24,6 +24,7 @@
         scale = {0.04, 0.04, 0.04},
     })
 ]]--
+--Test test test
 local uevrUtils = require("libs/uevr_utils")
 local paramModule = require("libs/core/params")
 local plugin = require("libs/core/plugin")
@@ -183,7 +184,7 @@ end
 -- Create/reuse a configured instance from a profile id or label. Caller attaches it.
 function M.create(idOrLabel)
 	local id, profile = findProfile(idOrLabel)
-	if profile == nil then
+	if profile == nil or id == nil then
 		M.print("create: profile not found: " .. tostring(idOrLabel), LogLevel.Error)
 		return nil
 	end
@@ -251,6 +252,7 @@ local function migrateLegacyParticleList()
 	paramManager.isDirty = true
 	return true
 end
+
 
 function M.init(isDeveloperMode, logLevel)
 	if logLevel ~= nil then

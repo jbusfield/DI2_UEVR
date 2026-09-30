@@ -179,7 +179,7 @@ function M.transformBoneToRoot(poseableComponent, targetBoneName, location, rota
 				local pName = poseableComponent:GetParentBone(uevrUtils.fname_from_string(rootBoneForPath))
 				rootBoneForPath = pName:to_string()
 			end
-			while boneName:to_string() ~= rootBoneForPath do
+			while boneName:to_string() ~= rootBoneForPath and boneName:to_string() ~= "None" do
 				M.setBoneSpaceLocalTransform(poseableComponent, boneName, localTransform, boneSpace, rootTransform)
 				boneName = poseableComponent:GetParentBone(boneName)
 			end

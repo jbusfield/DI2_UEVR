@@ -1,6 +1,8 @@
 local uevrUtils = require('libs/uevr_utils')
+local plugin = require('libs/core/plugin')
 
 local M = {}
+M.enableTextureCache = false
 
 local currentLogLevel = LogLevel.Error
 function M.setLogLevel(val)
@@ -12,6 +14,200 @@ function M.print(text, logLevel)
         uevrUtils.print("[widget] " .. text, logLevel)
     end
 end
+
+local Image = {}
+Image.__index = Image
+Image.createdImages = {}
+Image.textureCache = {}
+Image.ALIGN = {
+	TOP_LEFT      = {0,   0},
+	TOP_CENTER    = {0.5, 0},
+	TOP_RIGHT     = {1,   0},
+	CENTER_LEFT   = {0,   0.5},
+	CENTER        = {0.5, 0.5},
+	CENTER_RIGHT  = {1,   0.5},
+	BOTTOM_LEFT   = {0,   1},
+	BOTTOM_CENTER = {0.5, 1},
+	BOTTOM_RIGHT  = {1,   1},
+}
+function Image.new(imageName, maxDim)
+	local self = setmetatable({}, Image)
+	if type(imageName) == "number" and maxDim == nil then
+		maxDim = imageName
+		imageName = nil
+	end
+	self.maxDim = maxDim or 128
+	self.drawSize = uevrUtils.vector2D(self.maxDim, self.maxDim)
+	self.image = nil
+	self.slot = nil
+	self.texture = nil
+	if imageName then
+		self:setTexture(imageName)
+	end
+	table.insert(Image.createdImages, self)
+	return self
+end
+function Image.destroyAll()
+	for i = 1, #Image.createdImages do
+		local inst = Image.createdImages[i]
+		if inst ~= nil and inst.remove ~= nil then
+			inst:remove()
+		end
+	end
+	Image.createdImages = {}
+	Image.textureCache = {}
+end
+
+function Image:setTexture(imageName, hideIfMissing)
+	if hideIfMissing == nil then hideIfMissing = true end
+	local function hideMissing()
+		if hideIfMissing and self.image ~= nil then
+			self.image:SetVisibility(1) -- Collapsed
+		end
+		return false
+	end
+	local function importTexture()
+		local result = plugin.executeFunction(kismet_rendering_library, "ImportFileAsTexture2D",
+			uevrUtils.get_world(), "$data/images/" .. imageName)
+		local texture = result and result.ReturnValue
+		if uevrUtils.getValid(texture) == nil then return nil end
+		if M.enableTextureCache then
+			Image.textureCache[imageName] = texture
+		end
+		return texture
+	end
+	local texture = nil
+	if M.enableTextureCache then
+		texture = Image.textureCache[imageName]
+		if uevrUtils.getValid(texture) == nil then
+			texture = nil
+			Image.textureCache[imageName] = nil
+		end
+	end
+	if texture == nil then
+		texture = importTexture()
+		if texture == nil then return hideMissing() end
+	end
+	-- stale/recycled cache entries can pass getValid but lose Texture2D methods
+	if texture.Blueprint_GetSizeX == nil or texture.Blueprint_GetSizeY == nil then
+		if M.enableTextureCache then
+			Image.textureCache[imageName] = nil
+		end
+		texture = importTexture()
+		if texture == nil or texture.Blueprint_GetSizeX == nil or texture.Blueprint_GetSizeY == nil then
+			return hideMissing()
+		end
+	end
+	self.texture = texture
+	local w, h = texture:Blueprint_GetSizeX(), texture:Blueprint_GetSizeY()
+	if w > 0 and h > 0 then
+		local scale = self.maxDim / math.max(w, h)
+		self.drawSize = uevrUtils.vector2D(w * scale, h * scale)
+	else
+		self.drawSize = uevrUtils.vector2D(self.maxDim, self.maxDim)
+	end
+	if self.image ~= nil then
+		self.image:SetBrushFromTexture(texture, true)
+		self.image:SetBrushSize(self.drawSize)
+		self.image:SetVisibility(0) -- Visible
+		if self.slot ~= nil then
+			self.slot:SetSize(self.drawSize)
+		end
+	end
+	return true
+end
+function Image:setLayout(opts)
+	if self.slot == nil then return end
+	opts = opts or {}
+
+	local offset = opts.offset or opts.position or uevrUtils.vector2D(0, 0)
+	local align = opts.align
+
+	local ax, ay = 0, 0
+	if align ~= nil then
+		if type(align) ~= "table" or align[1] == nil then return end
+		ax, ay = align[1], align[2]
+	end
+
+	local pt = uevrUtils.vector2D(ax, ay)
+	local anchors = self.slot:GetAnchors()
+	anchors.Minimum = pt
+	anchors.Maximum = pt
+	self.slot:SetAnchors(anchors)
+	self.slot:SetAlignment(pt)
+	self.slot:SetPosition(offset)
+	self.slot:SetSize(self.drawSize)
+	self.slot:SetZOrder(opts.zOrder or 999)
+end
+
+function Image:addToWidget(widget, opts)
+	if widget == nil or widget.WidgetTree == nil then return false end
+	local panel = widget.WidgetTree.RootWidget
+	if panel == nil or panel.AddChildToCanvas == nil then return false end
+	if self.image == nil then
+		self.image = uevrUtils.spawn_object("Class /Script/UMG.Image", widget.WidgetTree)
+		if self.image == nil then return false end
+		if self.texture ~= nil then
+			self.image:SetBrushFromTexture(self.texture, true)
+			self.image:SetBrushSize(self.drawSize)
+		else
+			self.image:SetBrushSize(self.drawSize)
+			self.image:SetVisibility(1) -- Collapsed until setTexture
+		end
+		self.slot = panel:AddChildToCanvas(self.image)
+	end
+	if opts ~= nil and opts.X ~= nil then
+		opts = { position = opts }
+	end
+	self:setLayout(opts or { position = uevrUtils.vector2D(50, 50) })
+	return true
+end
+
+function Image:setPosition(position2D)
+	self:setLayout({ position = position2D })
+end
+
+function Image:remove()
+	if uevrUtils.getValid(self.image) ~= nil and self.image.RemoveFromParent ~= nil then
+		self.image:RemoveFromParent()
+	end
+	self.image = nil
+	self.slot = nil
+	self.texture = nil
+end
+
+M.Image = Image
+
+function M.destroyAll()
+	Image.destroyAll()
+end
+
+uevrUtils.registerPreLevelChangeCallback(function()
+	M.destroyAll()
+end)
+
+uevr.params.sdk.callbacks.on_script_reset(function()
+	M.destroyAll()
+end)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local function normalizeWidgetName(widgetName)
     if widgetName == nil then return nil end

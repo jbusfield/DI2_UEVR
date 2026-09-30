@@ -87,14 +87,20 @@ local function getConfigWidgets(m_paramManager)
 		initialValue = configDefaults["useRootOffset"] or true
 	},
 	{ widgetType = "indent", width = 20} ,
-	{
-		widgetType = "drag_float3",
-		id = widgetPrefix .. "rootOffset",
-		label = "HMD Offset",
-		speed = .1,
-		range = {-200, 200},
-		initialValue = {configDefaults["rootOffset"].X, configDefaults["rootOffset"].Y, configDefaults["rootOffset"].Z}
-	},
+		{
+			widgetType = "drag_float3",
+			id = widgetPrefix .. "rootOffset",
+			label = "HMD Offset",
+			speed = .1,
+			range = {-200, 200},
+			initialValue = {configDefaults["rootOffset"].X, configDefaults["rootOffset"].Y, configDefaults["rootOffset"].Z}
+		},
+		{
+			widgetType = "checkbox",
+			id = widgetPrefix .. "useRootOffsetLocalZ",
+			label = "Use Local Z",
+			initialValue = configDefaults["useRootOffsetLocalZ"] or false
+		},
 	{ widgetType = "unindent", width = 20} ,
 	{
 		widgetType = "checkbox",
@@ -286,6 +292,13 @@ local function getConfigWidgets(m_paramManager)
 					id = widgetPrefix .. "pawnRotationModeDisableInEarlyUpdate",
 					label = "Disable In Early Update",
 					initialValue = configDefaults["pawnRotationModeDisableInEarlyUpdate"]
+				},
+				{ widgetType = "same_line"},
+				{
+					widgetType = "checkbox",
+					id = widgetPrefix .. "pawnRotationModeUseRootPitchRoll",
+					label = "Use Root Pitch/Roll",
+					initialValue = configDefaults["pawnRotationModeUseRootPitchRoll"]
 				},
 				{
 					widgetType = "slider_float",
@@ -578,6 +591,10 @@ configui.onUpdate(widgetPrefix .. "rootOffset", function(value)
     updateSetting("rootOffset", {X=arr[1],Y=arr[2],Z=arr[3]})
 end)
 
+configui.onUpdate(widgetPrefix .. "useRootOffsetLocalZ", function(value)
+    updateSetting("useRootOffsetLocalZ", value)
+end)
+
 configui.onUpdate(widgetPrefix .. "overridePlayerControllerPitch", function(value)
 	updateSetting("overridePlayerControllerPitch", value)
 end)
@@ -643,6 +660,10 @@ end)
 
 configui.onUpdate(widgetPrefix .. "pawnRotationModeDisableInEarlyUpdate", function(value)
 	updateSetting("pawnRotationModeDisableInEarlyUpdate", value)
+end)
+
+configui.onUpdate(widgetPrefix .. "pawnRotationModeUseRootPitchRoll", function(value)
+	updateSetting("pawnRotationModeUseRootPitchRoll", value)
 end)
 
 configui.onUpdate(widgetPrefix .. "optimizeBodyLocationCalculations", function(value)

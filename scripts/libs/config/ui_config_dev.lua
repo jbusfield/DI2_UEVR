@@ -17,25 +17,29 @@ local currentGameStateText = ""
 local stateConfigWidget = {
     {stateKey = "viewLocked", valueKey = "lockedUIWhenActive"},
     {stateKey = "screen2D", valueKey = "screen2DWhenActive"},
+    {stateKey = "roomscaleEnabled", valueKey = "roomscaleWhenActive"},
     {stateKey = "decouplePitch", valueKey = "decouplePitchWhenActive"},
     {stateKey = "autoAdjustUI", valueKey = "autoAdjustUIWhenActive"},
     {stateKey = "inputEnabled", valueKey = "inputWhenActive"},
     {stateKey = "handsEnabled", valueKey = "handsWhenActive"},
     {stateKey = "remapEnabled", valueKey = "remapWhenActive"},
     {stateKey = "fadeCamera", valueKey = "fadeCameraWhenActive"},
-    {stateKey = "pawnArmBones", valueKey = "pawnArmBonesWhenActive"}
+    {stateKey = "pawnArmBones", valueKey = "pawnArmBonesWhenActive"},
+    {stateKey = "controllerMouse", valueKey = "controllerMouseWhenActive"}
 }
 
 local stateConfigGame = {
     {stateKey = "viewLocked", valueKey = "lockedUIWhenInGameState"},
     {stateKey = "screen2D", valueKey = "screen2DWhenInGameState"},
+    {stateKey = "roomscaleEnabled", valueKey = "roomscaleWhenInGameState"},
     {stateKey = "decouplePitch", valueKey = "decouplePitchWhenInGameState"},
     {stateKey = "autoAdjustUI", valueKey = "autoAdjustUIWhenInGameState"},
     {stateKey = "inputEnabled", valueKey = "inputWhenInGameState"},
     {stateKey = "handsEnabled", valueKey = "handsWhenInGameState"},
     {stateKey = "remapEnabled", valueKey = "remapWhenInGameState"},
     {stateKey = "fadeCamera", valueKey = "fadeCameraWhenInGameState"},
-    {stateKey = "pawnArmBones", valueKey = "pawnArmBonesWhenInGameState"}
+    {stateKey = "pawnArmBones", valueKey = "pawnArmBonesWhenInGameState"},
+    {stateKey = "controllerMouse", valueKey = "controllerMouseWhenInGameState"}
 }
 
 local gameStates = {"cutscene", "paused", "character_hidden"}
@@ -90,6 +94,22 @@ local function getConfigWidgets()
                 widgetType = "input_text",
                 id = widgetPrefix .. "screen2DWhenInGameStatePriority",
                 label = " Screen 2D",
+                initialValue = "0",
+                width = 35,
+            },
+            {
+                widgetType = "combo",
+                id = widgetPrefix .. "roomscaleWhenInGameState",
+                label = "",
+                selections = {"No effect", "Enable", "Disable"},
+                initialValue = 1,
+                width = 150,
+            },
+		    { widgetType = "same_line" },
+            {
+                widgetType = "input_text",
+                id = widgetPrefix .. "roomscaleWhenInGameStatePriority",
+                label = " Roomscale",
                 initialValue = "0",
                 width = 35,
             },
@@ -205,6 +225,22 @@ local function getConfigWidgets()
                 initialValue = "0",
                 width = 35,
             },
+            {
+                widgetType = "combo",
+                id = widgetPrefix .. "controllerMouseWhenInGameState",
+                label = "",
+                selections = {"No effect", "Enable", "Disable"},
+                initialValue = 1,
+                width = 150,
+            },
+		    { widgetType = "same_line" },
+            {
+                widgetType = "input_text",
+                id = widgetPrefix .. "controllerMouseWhenInGameStatePriority",
+                label = " Controller Mouse",
+                initialValue = "0",
+                width = 35,
+            },
             { widgetType = "end_rect", additionalSize = 12, rounding = 5 }, { widgetType = "unindent", width = 5 }, { widgetType = "end_group", },
 	        { widgetType = "unindent", width = 20 },
 	        { widgetType = "new_line" },
@@ -297,6 +333,22 @@ local function getConfigWidgets()
                 widgetType = "input_text",
                 id = widgetPrefix .. "screen2DWhenActivePriority",
                 label = " Screen 2D",
+                initialValue = "0",
+                width = 35,
+            },
+            {
+                widgetType = "combo",
+                id = widgetPrefix .. "roomscaleWhenActive",
+                label = "",
+                selections = {"No effect", "Enable", "Disable"},
+                initialValue = 1,
+                width = 150,
+            },
+		    { widgetType = "same_line" },
+            {
+                widgetType = "input_text",
+                id = widgetPrefix .. "roomscaleWhenActivePriority",
+                label = " Roomscale",
                 initialValue = "0",
                 width = 35,
             },
@@ -409,6 +461,22 @@ local function getConfigWidgets()
                 widgetType = "input_text",
                 id = widgetPrefix .. "pawnArmBonesWhenActivePriority",
                 label = " Pawn Arm Bones",
+                initialValue = "0",
+                width = 35,
+            },
+            {
+                widgetType = "combo",
+                id = widgetPrefix .. "controllerMouseWhenActive",
+                label = "",
+                selections = {"No effect", "Enable", "Disable"},
+                initialValue = 1,
+                width = 150,
+            },
+		    { widgetType = "same_line" },
+            {
+                widgetType = "input_text",
+                id = widgetPrefix .. "controllerMouseWhenActivePriority",
+                label = " Controller Mouse",
                 initialValue = "0",
                 width = 35,
             },

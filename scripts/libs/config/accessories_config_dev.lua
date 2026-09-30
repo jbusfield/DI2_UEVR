@@ -586,7 +586,7 @@ function M.getConfigWidgets(id, prefix, width)
                     widgetType = "combo",
                     id = prefix .. "accessory_item_activation_hand",
                         label = "Activation Requirement",
-                        selections = {"None", "Left Hand Proximity", "Right Hand Proximity", "Either Hand Proximity", "Left Hand Proximity During Montage Only", "Right Hand Proximity During Montage Only", "Either Hand Proximity During Montage Only", "Left Hand Always", "Right Hand Always", "Either Hand Always"},
+                        selections = {"None", "Left Hand Proximity", "Right Hand Proximity", "Either Hand Proximity", "Left Hand Proximity During Montage Only", "Right Hand Proximity During Montage Only", "Either Hand Proximity During Montage Only", "Left Hand Always", "Right Hand Always", "Either Hand Always", "Left Hand Grip", "Right Hand Grip", "Either Hand Grip", "Left Hand Grip Toggle", "Right Hand Grip Toggle", "Either Hand Grip Toggle"},
                     initialValue = 1,
                     width = width
                 },
@@ -630,14 +630,22 @@ function M.getConfigWidgets(id, prefix, width)
 end
 
 local socketCache = {}
-local function refreshSocketList(id, prefix)
+local socketProviders = {}
+function M.setSocketProvider(id, provider)
+    if type(id) ~= "string" or (provider ~= nil and type(provider) ~= "function") then return false end
+    socketProviders[id] = provider
+    socketCache[id] = nil
+    return true
+end
+
+local function refreshSocketList(id, prefix, force)
+    if force then socketCache[id] = nil end
     if socketCache[id] ~= nil then
         configui.setSelections(prefix .. "accessory_item_socket_list", socketCache[id])
     else
-       --need to get all the sockets for the mesh represented by id
-        if callerModule ~= nil then
-            --print("Requesting sockets for attachment ID: " .. tostring(id))
-            callerModule.getSocketsForAttachmentID(id, function(names)
+        local provider = socketProviders[id]
+        if provider ~= nil or callerModule ~= nil then
+            local onSockets = function(names)
                 print(names)
                 local socketList = {}
                 if names == nil or #names == 0 then
@@ -648,7 +656,12 @@ local function refreshSocketList(id, prefix)
                     socketCache[id] = socketList
                 end
                 configui.setSelections(prefix .. "accessory_item_socket_list", socketList)
-            end)
+            end
+            if provider ~= nil then
+                provider(onSockets)
+            elseif callerModule ~= nil then
+                callerModule.getSocketsForAttachmentID(id, onSockets)
+            end
         end
     end
 end
@@ -698,7 +711,8 @@ local function setUIForMarker(attachmentID, prefix, accessoryID, markerIndex)
     configui.setValue(prefix .. "accessory_item_rotation", getMarkerField(attachmentID, accessoryID, markerIndex, "rotation") or {0.0, 0.0, 0.0}, true)
     configui.setValue(prefix .. "accessory_item_activation_hand", getMarkerField(attachmentID, accessoryID, markerIndex, "activation_hand") or 1, true)
     configui.setValue(prefix .. "accessory_item_activation_distance", getMarkerField(attachmentID, accessoryID, markerIndex, "activation_distance") or 0.0, true)
-    configui.setHidden(prefix .. "accessory_item_activation_distance", (getMarkerField(attachmentID, accessoryID, markerIndex, "activation_hand") or 1) == 1)
+    local activationHand = getMarkerField(attachmentID, accessoryID, markerIndex, "activation_hand") or 1
+    configui.setHidden(prefix .. "accessory_item_activation_distance", activationHand == 1 or activationHand == 8 or activationHand == 9 or activationHand == 10)
     configui.setValue(prefix .. "accessory_start_time", getMarkerField(attachmentID, accessoryID, markerIndex, "start_time") or 0.0, true)
     configui.setValue(prefix .. "accessory_end_time", getMarkerField(attachmentID, accessoryID, markerIndex, "end_time") or 0.0, true)
 
@@ -1407,14 +1421,14 @@ function M.createConfigCallbacks(id, prefix)
     configui.onUpdate(prefix .. "accessory_item_socket_finder_search_button", function()
         local accessoryID = getAccessoryID(id, prefix)
         if accessoryID ~= nil then
-            refreshSocketList(id, prefix)
+            refreshSocketList(id, prefix, true)
         end
     end)
 
     configui.onUpdate(prefix .. "accessory_item_socket_finder_use_button", function()
         local socketValue = configui.getValue(prefix .. "accessory_item_socket_list")
-        local socketName = socketCache[id][socketValue]
-        configui.setValue(prefix .. "accessory_item_socket_name", socketName)
+        local socketName = socketCache[id] and socketCache[id][socketValue]
+        if socketName ~= nil then configui.setValue(prefix .. "accessory_item_socket_name", socketName) end
         --configui.setHidden(prefix .. "accessory_item_socket_finder_tool", true)
     end)
 

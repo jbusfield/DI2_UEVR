@@ -4,6 +4,7 @@ local montage = require('libs/montage')
 local input = require('libs/input')
 local attachments = require('libs/attachments')
 local weapons = require('helpers/weapons')
+local gestures = require('libs/gestures')
 
 ---------------------------------------------------------------------------
 -- VR melee: RequestBeginStandardAttack (durability / attack state), mute body
@@ -148,9 +149,9 @@ local function beginVrMeleeSweep(heavy, hand)
 	return true
 end
 
-uevrUtils.createDeferral("vr_melee_sweep", 700, function()
-	endVrMeleeSweep()
-end)
+-- uevrUtils.createDeferral("vr_melee_sweep", 700, function()
+-- 	endVrMeleeSweep()
+-- end)
 
 hook_function("Class /Script/Engine.AnimInstance", "Montage_Play", true,
 	function(fn, obj, locals)
@@ -179,7 +180,7 @@ local function animateMelee(hand)
 		endVrMeleeSweep()
 	end
 	beginVrMeleeSweep(heavy, hand)
-	uevrUtils.updateDeferral("vr_melee_sweep")
+	--uevrUtils.updateDeferral("vr_melee_sweep")
 end
 
 uevrUtils.registerOnPreInputGetStateCallback(function(retval, user_index, state)
@@ -198,6 +199,14 @@ end)
 
 uevrUtils.registerUEVRCallback("on_gesture_swipe_left", function(strength, hand)
 	animateMelee(hand or Handed.Right)
+end)
+
+gestures.registerSwingBeginCallback(function(rightHand, leftHand)
+	animateMelee(rightHand and Handed.Right or leftHand and Handed.Left or Handed.Right)
+end)
+
+gestures.registerSwingEndCallback(function(rightHand, leftHand)
+	endVrMeleeSweep()
 end)
 
 ---------------------------------------------------------------------------

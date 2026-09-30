@@ -250,17 +250,23 @@ local function syncMeshVisibilityStates(isHidden, mesh, key, value, persist, noC
 	local armsAnimationMesh = M.getArmsAnimationMesh()
 	if mesh == bodyMesh then
 		setParameter("hidePawnBodyMesh", isHidden, persist)
-		uevrUtils.executeUEVRCallbacks("on_pawn_config_param_change", "hidePawnBodyMesh", isHidden)
+		if not (noCallbacks == true) then
+			uevrUtils.executeUEVRCallbacks("on_pawn_config_param_change", "hidePawnBodyMesh", isHidden, persist)
+		end
 		uevrUtils.executeUEVRCallbacks("on_pawn_param_change", "hidePawnBodyMesh", isHidden)
 	end
 	if mesh == armsMesh then
 		setParameter("hidePawnArmsMesh", isHidden, persist)
-		uevrUtils.executeUEVRCallbacks("on_pawn_config_param_change", "hidePawnArmsMesh", isHidden)
+		if not (noCallbacks == true) then
+			uevrUtils.executeUEVRCallbacks("on_pawn_config_param_change", "hidePawnArmsMesh", isHidden, persist)
+		end
 		uevrUtils.executeUEVRCallbacks("on_pawn_param_change", "hidePawnArmsMesh", isHidden)
 	end
 	if mesh == armsAnimationMesh then
 		setParameter("hideAnimationArms", isHidden, persist)
-		uevrUtils.executeUEVRCallbacks("on_pawn_config_param_change", "hidePawnArmsAnimationMesh", isHidden)
+		if not (noCallbacks == true) then
+			uevrUtils.executeUEVRCallbacks("on_pawn_config_param_change", "hidePawnArmsAnimationMesh", isHidden, persist)
+		end
 		uevrUtils.executeUEVRCallbacks("on_pawn_param_change", "hidePawnArmsAnimationMesh", isHidden)
 	end
 	isSyncingMeshVisibility = false  -- Reset flag
@@ -282,15 +288,15 @@ local function saveParameter(key, value, persist, noCallbacks)
 			doHideArmsBones(value)
 		end
 		if not (noCallbacks == true) then
-			uevrUtils.executeUEVRCallbacks("on_pawn_config_param_change", key, value)
+			uevrUtils.executeUEVRCallbacks("on_pawn_config_param_change", key, value, persist)
 		end
 		uevrUtils.executeUEVRCallbacks("on_pawn_param_change", key, value)
 	end
 end
 
 local createConfigMonitor = doOnce(function()
-	uevrUtils.registerUEVRCallback("on_pawn_config_param_change", function(key, value)
-		saveParameter(key, value, true, true)
+	uevrUtils.registerUEVRCallback("on_pawn_config_param_change", function(key, value, persist)
+		saveParameter(key, value, persist, true)
 	end)
 end, Once.EVER)
 
@@ -315,6 +321,14 @@ function M.setBodyMeshName(val)
 	saveParameter("bodyMeshName", "Pawn." .. val)
 end
 
+function M.setArmsMeshName(val)
+	saveParameter("armsMeshName", "Pawn." .. val)
+end
+
+function M.setArmsAnimationMeshName(val)
+	saveParameter("armsAnimationMeshName", "Pawn." .. val)
+end
+
 function M.getPawnBaseName()
 	return getParameter("basePawnName") or "Pawn"
 end
@@ -324,6 +338,7 @@ function M.getPawn()
 end
 
 function M.getBodyMesh()
+	--print(getParameter("bodyMeshName"))
 	return uevrUtils.getObjectFromDescriptor(getParameter("bodyMeshName"))
 end
 

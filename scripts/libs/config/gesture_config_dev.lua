@@ -36,6 +36,18 @@ local parameterDefaults = {
 		cooldownTime = 0.5,
 		snapTurnYawThreshold = 45.0,
 	},
+	swing = {
+		minThresholdSpeed = 180,
+		maxThresholdSpeed = 320,
+		snapTurnYawThreshold = 45.0,
+	},
+	flick = {
+		minThresholdAngleSpeed = 400,
+		maxThresholdAngleSpeed = 900,
+		minAngleDelta = 40.0,
+		upDotThreshold = 0.75,
+		cooldownTime = 0.5,
+	},
 	holster = {
 		triggerAngle = -60.0,
 	},
@@ -56,6 +68,23 @@ local parameterDefaults = {
 		maxTiltDeg = 58.0,
 		palmFacing = 0.5,
 		releaseSlack = 0.25,
+	},
+	stop = {
+		maxDropCm = 45.0,
+		maxRaiseCm = 10.0,
+		inFront = 0.65,
+		minDistanceCm = 15.0,
+		maxDistanceCm = 85.0,
+		palmFacing = 0.45,
+		maxTiltDeg = 65.0,
+		releaseSlack = 0.25,
+	},
+	push = {
+		minThresholdSpeed = 180,
+		maxThresholdSpeed = 320,
+		awayDotThreshold = 0.65,
+		cooldownTime = 0.8,
+		twoHandedSyncWindow = 0.35,
 	},
 	face = {
 		triggerThreshold = 128,
@@ -98,6 +127,20 @@ local swipeHelpLines = {
 	"Direction Threshold - How clearly the motion must favor one axis (left/right/up/down/pull-in) to pick that swipe type. Higher = stricter direction; lower = looser classification (more accidental directions).",
 	"Cooldown (sec) - How long after a swipe before another can fire. Higher = fewer rapid repeats; lower = can chain swipes sooner.",
 	"Snap Turn Yaw Threshold (deg) - Ignores hand motion when your view/yaw jumps this much (e.g. snap turn). Higher = tolerate bigger yaw jumps without canceling; lower = treat smaller turns as \"not a swipe\".",
+}
+
+local swingHelpLines = {
+	"Min Speed - How fast your hand must move before a swing begins. Higher = ignore slow waves; lower = easier to start.",
+	"Max Speed - Caps how hard a swing feels for strength (0-1). Does not block detection.",
+	"Snap Turn Yaw Threshold (deg) - Ends an active swing (and ignores motion) when view yaw jumps this much.",
+}
+
+local flickHelpLines = {
+	"Min Angle Speed (deg/s) - How fast the controller tip must rotate before a flick counts. Higher = ignore slow tip tilts; lower = easier to trigger with a light wrist snap.",
+	"Max Angle Speed (deg/s) - Caps how hard a flick feels for strength (0-1). Does not block detection. Higher = need a faster snap to reach full strength; lower = moderate snaps report as strong.",
+	"Min Angle Delta (deg) - Minimum tip-direction change across the motion. Higher = require a bigger wrist turn; lower = allow smaller snaps.",
+	"Up Dot Threshold (0-1) - How closely the tip must finish pointing upward to count as flick-up / yank. Higher = must finish more straight up; lower = allow a wider upward cone.",
+	"Cooldown (sec) - How long after a flick before another can fire. Higher = fewer rapid repeats; lower = can chain flicks sooner.",
 }
 
 local blockHelpLines = {
@@ -192,9 +235,10 @@ local function floatWidget(path, label, speed, range)
 end
 
 -- Test checkbox + Left/Right status row (ids: <name>_test, <name>_test_status_left/right)
-local function getGestureTestWidgets(name)
+local function getGestureTestWidgets(name, testLabel)
+	testLabel = testLabel or "Test"
 	return {
-		{ widgetType = "checkbox", id = widgetPrefix .. name .. "_test", label = "Test", initialValue = false },
+		{ widgetType = "checkbox", id = widgetPrefix .. name .. "_test", label = testLabel, initialValue = false },
 		{ widgetType = "same_line" },
 		{ widgetType = "text_colored", id = widgetPrefix .. name .. "_test_status_left", label = "Left Inactive", color = "#00000000" },
 		{ widgetType = "same_line" },
@@ -233,6 +277,34 @@ local function getConfigWidgets(m_paramManager)
 			floatWidget({"swipe", "cooldownTime"}, "Cooldown (sec)", 0.01, {0, 10}),
 			floatWidget({"swipe", "snapTurnYawThreshold"}, "Snap Turn Yaw Threshold (deg)", 0.5, {0, 180}),
 		expandArray(getGestureHelpWidgets, "swipe", swipeHelpLines),
+		{ widgetType = "tree_pop" },
+
+		{
+			widgetType = "tree_node",
+			id = widgetPrefix .. "swing_tree",
+			initialOpen = true,
+			label = "Swing"
+		},
+		expandArray(getGestureTestWidgets, "swing"),
+			floatWidget({"swing", "minThresholdSpeed"}, "Min Speed", 1, {0, 2000}),
+			floatWidget({"swing", "maxThresholdSpeed"}, "Max Speed", 1, {0, 2000}),
+			floatWidget({"swing", "snapTurnYawThreshold"}, "Snap Turn Yaw Threshold (deg)", 0.5, {0, 180}),
+		expandArray(getGestureHelpWidgets, "swing", swingHelpLines),
+		{ widgetType = "tree_pop" },
+
+		{
+			widgetType = "tree_node",
+			id = widgetPrefix .. "flick_tree",
+			initialOpen = true,
+			label = "Wrist Flick"
+		},
+		expandArray(getGestureTestWidgets, "flick"),
+			floatWidget({"flick", "minThresholdAngleSpeed"}, "Min Angle Speed (deg/s)", 1, {0, 3000}),
+			floatWidget({"flick", "maxThresholdAngleSpeed"}, "Max Angle Speed (deg/s)", 1, {0, 3000}),
+			floatWidget({"flick", "minAngleDelta"}, "Min Angle Delta (deg)", 0.5, {0, 180}),
+			floatWidget({"flick", "upDotThreshold"}, "Up Dot Threshold (0-1)", 0.01, {0, 1}),
+			floatWidget({"flick", "cooldownTime"}, "Cooldown (sec)", 0.01, {0, 10}),
+		expandArray(getGestureHelpWidgets, "flick", flickHelpLines),
 		{ widgetType = "tree_pop" },
 
 		{
@@ -281,6 +353,39 @@ local function getConfigWidgets(m_paramManager)
 			floatWidget({"block", "palmFacing"}, "Palm Facing Away (0-1)", 0.01, {0, 1}),
 			floatWidget({"block", "releaseSlack"}, "Release Slack (0-1)", 0.01, {0, 1}),
 		expandArray(getGestureHelpWidgets, "block", blockHelpLines),
+		{ widgetType = "tree_pop" },
+
+		{
+			widgetType = "tree_node",
+			id = widgetPrefix .. "stop_tree",
+			initialOpen = true,
+			label = "Stop"
+		},
+		expandArray(getGestureTestWidgets, "stop", "Test One-Handed"),
+		expandArray(getGestureTestWidgets, "stop_two_handed", "Test Two-Handed"),
+			floatWidget({"stop", "maxDropCm"}, "Max Drop Below Head (cm)", 0.5, {0, 200}),
+			floatWidget({"stop", "maxRaiseCm"}, "Max Raise Above Head (cm)", 0.5, {0, 100}),
+			floatWidget({"stop", "inFront"}, "Must Be In Front (0-1)", 0.01, {0, 1}),
+			floatWidget({"stop", "minDistanceCm"}, "Min Forward Distance (cm)", 0.5, {0, 200}),
+			floatWidget({"stop", "maxDistanceCm"}, "Max Forward Distance (cm)", 0.5, {0, 200}),
+			floatWidget({"stop", "palmFacing"}, "Palm Facing Out (0-1)", 0.01, {0, 1}),
+			floatWidget({"stop", "maxTiltDeg"}, "Max Controller Tilt (deg)", 0.5, {0, 90}),
+			floatWidget({"stop", "releaseSlack"}, "Release Slack (0-1)", 0.01, {0, 1}),
+		{ widgetType = "tree_pop" },
+
+		{
+			widgetType = "tree_node",
+			id = widgetPrefix .. "push_tree",
+			initialOpen = true,
+			label = "Push"
+		},
+		expandArray(getGestureTestWidgets, "push", "Test One-Handed"),
+		expandArray(getGestureTestWidgets, "push_two_handed", "Test Two-Handed"),
+			floatWidget({"push", "minThresholdSpeed"}, "Min Speed", 1, {0, 2000}),
+			floatWidget({"push", "maxThresholdSpeed"}, "Max Speed", 1, {0, 2000}),
+			floatWidget({"push", "awayDotThreshold"}, "Away Dot Threshold", 0.01, {0, 1}),
+			floatWidget({"push", "cooldownTime"}, "Cooldown (sec)", 0.01, {0, 10}),
+			floatWidget({"push", "twoHandedSyncWindow"}, "Two-Handed Sync Window (sec)", 0.01, {0, 1}),
 		{ widgetType = "tree_pop" },
 
 		{
@@ -375,6 +480,12 @@ local GESTURE_HATGRAB = 6
 local GESTURE_SWIPE_LEFT = 11
 local GESTURE_CHESTGRAB = 17
 local GESTURE_BLOCK = 18
+local GESTURE_STOP = 19
+local GESTURE_STOP_TWO_HANDED = 20
+local GESTURE_PUSH = 21
+local GESTURE_PUSH_TWO_HANDED = 22
+local GESTURE_FLICK = 23
+local GESTURE_SWING = 25
 local MOMENTARY_ACTIVE_MS = 500
 
 local gestureTests = {}
@@ -437,6 +548,18 @@ local function registerGestureTest(name, gestureId, opts)
 	for _, callbackName in ipairs(opts.callbacks) do
 		uevrUtils.registerUEVRCallback(callbackName, function(activeOrStrength, hand)
 			if hand == nil then
+				if not test.enabled then
+					return
+				end
+				if test.momentary then
+					flashMomentaryHand(test, Handed.Left)
+					flashMomentaryHand(test, Handed.Right)
+				else
+					local active = activeOrStrength == true
+					test.activeByHand[Handed.Left] = active
+					test.activeByHand[Handed.Right] = active
+					refreshGestureTest(test)
+				end
 				return
 			end
 			if test.momentary then
@@ -516,6 +639,20 @@ registerGestureTest("swipe", GESTURE_SWIPE_LEFT, {
 		"on_gesture_snatch",
 	},
 })
+registerGestureTest("swing", GESTURE_SWING, {
+	momentary = true,
+	callbacks = {
+		"on_gesture_swing_begin",
+		"on_gesture_swing_end",
+	},
+})
+registerGestureTest("flick", GESTURE_FLICK, {
+	momentary = true,
+	callbacks = {
+		"on_gesture_flick",
+		"on_gesture_flick_up",
+	},
+})
 registerGestureTest("chest", GESTURE_CHESTGRAB, {
 	momentary = false,
 	callbacks = { "on_gesture_chestgrab" },
@@ -523,6 +660,22 @@ registerGestureTest("chest", GESTURE_CHESTGRAB, {
 registerGestureTest("block", GESTURE_BLOCK, {
 	momentary = false,
 	callbacks = { "on_gesture_block" },
+})
+registerGestureTest("stop", GESTURE_STOP, {
+	momentary = false,
+	callbacks = { "on_gesture_stop" },
+})
+registerGestureTest("stop_two_handed", GESTURE_STOP_TWO_HANDED, {
+	momentary = false,
+	callbacks = { "on_gesture_stop_two_handed" },
+})
+registerGestureTest("push", GESTURE_PUSH, {
+	momentary = true,
+	callbacks = { "on_gesture_push" },
+})
+registerGestureTest("push_two_handed", GESTURE_PUSH_TWO_HANDED, {
+	momentary = true,
+	callbacks = { "on_gesture_push_two_handed" },
 })
 registerGestureTest("face_mouth", GESTURE_EAT, {
 	momentary = false,

@@ -607,6 +607,7 @@ function M.setAnimationMesh(mesh)
 	defaultAnimationMesh = mesh
 end
 
+--This is hardcoding "Root" so it shouldnt be a general purpose function
 function M.setRootBoneRotation(rotator)
 	if rotator == nil then rotator = uevrUtils.rotator(0,0,0) end
 	for name, components in pairs(handComponents) do
@@ -1377,6 +1378,9 @@ local function tryAutoCreateHands()
 			end
 		end
 	end
+end
+function M.regenerateHands()
+	tryAutoCreateHands()
 end
 
 uevrUtils.setInterval(1000, function()

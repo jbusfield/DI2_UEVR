@@ -2336,7 +2336,9 @@ end
 
 function M.getComponentRotation(component)
 	if uevrLib.extremeCompatibilityMode == false then
-		return component:K2_GetComponentRotation()
+		if M.getValid(component) ~= nil then
+			return component:K2_GetComponentRotation()
+		end
 	else
 		if checkPluginExists() then
 			---@diagnostic disable-next-line: need-check-nil
@@ -2541,14 +2543,27 @@ function M.stringFromTag(tag)
 	return tag and tag.TagName and tag.TagName:to_string() or ""
 end
 
-function M.get_world()
-	if game_engine ~= nil then
-		local viewport = game_engine.GameViewport
-		if viewport ~= nil then
-			local world = viewport.World
-			return world
-		end
+function M.get_game_engine()
+	if M.getValid(game_engine) ~= nil then
+		return game_engine
 	end
+
+	game_engine = uevr.api:get_engine()
+
+	if game_engine == nil then
+		game_engine = M.find_first_of("Class /Script/Engine.GameEngine")
+	end
+
+	return game_engine
+end
+
+function M.get_world()
+	local viewport = M.getValid(M.get_game_engine(),{"GameViewport"})
+	if viewport ~= nil then
+		local world = viewport.World
+		return world
+	end
+	
 	return nil
 end
 
@@ -2564,7 +2579,7 @@ function M.spawn_actor_of_class(className, transform, collisionMethod, owner)
 		return nil
 	end
 
-	local viewport = game_engine.GameViewport
+	local viewport = M.getValid(M.get_game_engine(),{"GameViewport"})
 	if viewport == nil then
 		print("Viewport is nil")
 	end
@@ -2590,7 +2605,7 @@ function M.spawn_actor_of_class(className, transform, collisionMethod, owner)
 end
 
 function M.spawn_actor(transform, collisionMethod, owner, tag)
-	local viewport = game_engine.GameViewport
+	local viewport = M.getValid(M.get_game_engine(),{"GameViewport"})
 	if viewport == nil then
 		print("Viewport is nil")
 	end
@@ -3409,6 +3424,19 @@ function M.get_2D_mode()
 		end
 	end
 	return false
+end
+
+function M.set_roomscale_active(state)
+	uevr.params.vr.set_mod_value("VR_RoomscaleMovement", state and "true" or "false")
+end
+
+function M.get_roomscale_active()
+	local mode = uevr.params.vr:get_mod_value("VR_RoomscaleMovement")
+	if string.sub(mode, 1, 4 ) == "true" then
+		return true
+	else
+		return false
+	end
 end
 
 function M.set_decoupled_pitch(state)
@@ -4245,7 +4273,6 @@ function M.getLineTraceHitResult(originPosition, originDirection, collisionChann
 	return nil, nil
 end
 
-
 function M.getTargetLocation(originPosition, originDirection, collisionChannel, ignoreActors, traceComplex, minHitDistance, maxTraceDistance)
 	local hitResult = M.getLineTraceHitResult(originPosition, originDirection, collisionChannel, traceComplex, ignoreActors, minHitDistance, maxTraceDistance)
 	if hitResult ~= nil then
@@ -4494,6 +4521,20 @@ function hook_function(class_name, function_name, native, prefn, postfn, dbgout)
     if dbgout then M.print("---") end
     return result, class_fn
 end
+-------------------------------------------------------------------------------
+-- Example hook pre function. Post is same but no return.
+-------------------------------------------------------------------------------
+
+-- Note if post, do not return a value. 
+-- If hooking as native, must return false.
+-- local function HookedFunctionPre(fn, obj, locals, result)
+    -- print("Shift beginning : ")
+
+    -- return true
+-- end
+
+--hook_function("BlueprintGeneratedClass /Game/Reality/BP_ShiftManager.BP_ShiftManager_C", "OnShiftBegin", false, HookedFunctionPre, nil, true)
+
 
 -------------------------------------------------------------------------------
 -- returns local pawn
@@ -4565,20 +4606,6 @@ function M.GetInstanceMatching(class_to_search, match_string)
 		end
 	end
 end
-
--------------------------------------------------------------------------------
--- Example hook pre function. Post is same but no return.
--------------------------------------------------------------------------------
-
--- Note if post, do not return a value. 
--- If hooking as native, must return false.
--- local function HookedFunctionPre(fn, obj, locals, result)
-    -- print("Shift beginning : ")
-
-    -- return true
--- end
-
---hook_function("BlueprintGeneratedClass /Game/Reality/BP_ShiftManager.BP_ShiftManager_C", "OnShiftBegin", false, HookedFunctionPre, nil, true)
 
 
 M.initUEVR(uevr)

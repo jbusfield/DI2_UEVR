@@ -1435,5 +1435,203 @@ end)
 	-- end
 -- end)
 
+
+
+
+-----------------------------------------------------------------
+--- List Widget, can add, delete or rename items. Customization between the header
+--- and footer widgets.
+------------------------------------------------------------------
+-- Combo + Add, framed settings group with Name + Delete.
+-- Put custom widgets between getHeaderWidgets and getFooterWidgets.
+function M.createNamedItemList(opts)
+	local prefix = opts.prefix
+	local paramManager = opts.paramManager
+	local paramPath = opts.paramPath
+	local comboLabel = opts.comboLabel or "Item"
+	local groupLabel = opts.groupLabel or "Settings"
+	local nameLabel = opts.nameLabel or "Name"
+	local defaultLabel = opts.defaultLabel or "New Item"
+	local width = opts.width
+	-- map of param key -> widget id; values live on the selected item next to label
+	local fields = opts.fields or {}
+
+	local ids = {}
+	local labels = {}
+
+	local function loadLists()
+		ids = {}
+		labels = {}
+		local items = paramManager:get(paramPath)
+		if items ~= nil then
+			for id, params in pairs(items) do
+				table.insert(ids, id)
+				table.insert(labels, (params and params.label) or id)
+			end
+		end
+		if #ids == 0 then
+			table.insert(ids, "none")
+			table.insert(labels, "None")
+		end
+	end
+
+	local function getSelectedId()
+		local id = ids[M.getValue(prefix .. "picker") or 1]
+		if id == nil or id == "none" then return nil end
+		return id
+	end
+
+	local function loadFields(itemId)
+		local params = itemId ~= nil and (paramManager:get({paramPath, itemId}) or {}) or {}
+		for key, widgetId in pairs(fields) do
+			local value = params[key]
+			if value == nil then
+				local def = getDefinitionElement(M.getPanelID(widgetId), widgetId)
+				value = def and def.initialValue
+			end
+			M.setValue(widgetId, value, true)
+		end
+	end
+
+	local function setUIForItem(itemId)
+		M.setHidden(prefix .. "group", itemId == nil)
+		if itemId ~= nil then
+			local params = paramManager:get({paramPath, itemId}) or {}
+			M.setValue(prefix .. "label", params.label or "", true)
+		end
+		loadFields(itemId)
+		M.setHidden(prefix .. "delete_override", true)
+		M.setValue(prefix .. "delete_override", false, true)
+	end
+
+	local function refresh()
+		loadLists()
+		M.setSelections(prefix .. "picker", labels)
+		M.setValue(prefix .. "picker", 1, true)
+		setUIForItem(getSelectedId())
+	end
+
+	local function getHeaderWidgets()
+		loadLists()
+		local combo = {
+			widgetType = "combo",
+			id = prefix .. "picker",
+			label = comboLabel,
+			selections = labels,
+			initialValue = 1,
+		}
+		local nameField = {
+			widgetType = "input_text",
+			id = prefix .. "label",
+			label = nameLabel,
+			initialValue = "",
+		}
+		if width ~= nil then
+			combo.width = width
+			nameField.width = width
+		end
+		return {
+			combo,
+			{ widgetType = "same_line" },
+			{
+				widgetType = "button",
+				id = prefix .. "add_button",
+				label = "Add",
+				size = {40, 24},
+			},
+			{ widgetType = "begin_group", id = prefix .. "group", isHidden = true },
+			{ widgetType = "indent", width = 15 },
+			{ widgetType = "text", label = groupLabel },
+			{ widgetType = "begin_rect" },
+			nameField,
+		}
+	end
+
+	local function getFooterWidgets()
+		return {
+			{ widgetType = "indent", width = 140 },
+			{
+				widgetType = "button",
+				id = prefix .. "delete_button",
+				label = "Delete",
+				size = {100, 22}
+			},
+			{ widgetType = "same_line" },
+			{
+				widgetType = "checkbox",
+				id = prefix .. "delete_override",
+				label = "Allow Delete",
+				initialValue = false,
+				isHidden = true
+			},
+			{ widgetType = "end_rect", additionalSize = 12, rounding = 5 },
+			{ widgetType = "unindent", width = 15 },
+			{ widgetType = "new_line" },
+			{ widgetType = "end_group" },
+		}
+	end
+
+	M.onCreateOrUpdate(prefix .. "picker", function()
+		setUIForItem(getSelectedId())
+	end)
+
+	M.onUpdate(prefix .. "label", function(value)
+		local itemId = getSelectedId()
+		if itemId == nil then return end
+		paramManager:set({paramPath, itemId, "label"}, value, true)
+		local index = M.getValue(prefix .. "picker") or 1
+		labels[index] = value
+		M.setSelections(prefix .. "picker", labels)
+	end)
+
+	for key, widgetId in pairs(fields) do
+		M.onUpdate(widgetId, function(value)
+			local itemId = getSelectedId()
+			if itemId == nil then return end
+			paramManager:set({paramPath, itemId, key}, value, true)
+		end)
+	end
+
+	M.onUpdate(prefix .. "add_button", function()
+		if ids[1] == "none" then
+			table.remove(ids, 1)
+			table.remove(labels, 1)
+		end
+		local label = defaultLabel .. " " .. (#ids + 1)
+		local newId = string.gsub('xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx', '[xy]', function(c)
+			local v = (c == 'x') and math.random(0, 0xf) or math.random(8, 0xb)
+			return string.format('%x', v)
+		end)
+		paramManager:set({paramPath, newId}, { label = label }, true)
+		table.insert(ids, newId)
+		table.insert(labels, label)
+		M.setSelections(prefix .. "picker", labels)
+		M.setValue(prefix .. "picker", #ids)
+		setUIForItem(newId)
+	end)
+
+	M.onUpdate(prefix .. "delete_button", function()
+		if M.getValue(prefix .. "delete_override") ~= true then
+			M.setHidden(prefix .. "delete_override", false)
+			M.setValue(prefix .. "delete_override", false)
+			return
+		end
+		local itemId = getSelectedId()
+		if itemId ~= nil then
+			paramManager:set({paramPath, itemId}, nil, true)
+			refresh()
+		end
+		M.setHidden(prefix .. "delete_override", true)
+		M.setValue(prefix .. "delete_override", false)
+	end)
+
+	return {
+		getHeaderWidgets = getHeaderWidgets,
+		getFooterWidgets = getFooterWidgets,
+		getSelectedId = getSelectedId,
+		refresh = refresh,
+	}
+end
+
 return M
 
