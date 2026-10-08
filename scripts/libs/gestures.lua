@@ -98,6 +98,9 @@ Wrist flick settings (quick wand/controller orientation snap — not arm transla
 		Caps how hard a flick feels for strength (0-1). Does not block detection.
 		Higher = need a faster snap to reach full strength; lower = moderate snaps report as strong.
 
+	upMinThresholdAngleSpeed / upMaxThresholdAngleSpeed
+		Same as above, but used for flick-up.
+
 	minAngleDelta
 		Minimum tip-direction change (deg) across the motion.
 		Higher = require a bigger wrist turn; lower = allow smaller snaps.
@@ -168,6 +171,8 @@ local parameters = {
 	flick = {
 		minThresholdAngleSpeed = 400,
 		maxThresholdAngleSpeed = 900,
+		upMinThresholdAngleSpeed = 400,
+		upMaxThresholdAngleSpeed = 900,
 		minAngleDelta = 40.0,
 		upDotThreshold = 0.75,
 		cooldownTime = 0.5,
@@ -389,6 +394,8 @@ local function createFlickDetector()
 		endFZ = nil,
 		minThresholdAngleSpeed = parameters.flick.minThresholdAngleSpeed,
 		maxThresholdAngleSpeed = parameters.flick.maxThresholdAngleSpeed,
+		upMinThresholdAngleSpeed = parameters.flick.upMinThresholdAngleSpeed,
+		upMaxThresholdAngleSpeed = parameters.flick.upMaxThresholdAngleSpeed,
 		minAngleDelta = parameters.flick.minAngleDelta,
 		upDotThreshold = parameters.flick.upDotThreshold,
 		cooldownTime = parameters.flick.cooldownTime,
@@ -432,12 +439,16 @@ local function applyDetectorParameters()
 
 	local flickMin = getParam({"flick", "minThresholdAngleSpeed"})
 	local flickMax = getParam({"flick", "maxThresholdAngleSpeed"})
+	local flickUpMin = getParam({"flick", "upMinThresholdAngleSpeed"})
+	local flickUpMax = getParam({"flick", "upMaxThresholdAngleSpeed"})
 	local flickAngle = getParam({"flick", "minAngleDelta"})
 	local flickUp = getParam({"flick", "upDotThreshold"})
 	local flickCooldown = getParam({"flick", "cooldownTime"})
 	for _, detector in pairs(flickDetectors) do
 		detector.minThresholdAngleSpeed = flickMin
 		detector.maxThresholdAngleSpeed = flickMax
+		detector.upMinThresholdAngleSpeed = flickUpMin
+		detector.upMaxThresholdAngleSpeed = flickUpMax
 		detector.minAngleDelta = flickAngle
 		detector.upDotThreshold = flickUp
 		detector.cooldownTime = flickCooldown
@@ -751,7 +762,7 @@ local function updateFlickDetector(self, forward, deltaTime)
 	local isFlickUp = false
 	local strengthPercent = 0
 
-	if angleSpeed > self.minThresholdAngleSpeed then
+	if angleSpeed > math.min(self.minThresholdAngleSpeed, self.upMinThresholdAngleSpeed) then
 		if angleSpeed > self.peakAngleSpeed then
 			self.peakAngleSpeed = angleSpeed
 			self.endFZ = forward.Z
@@ -759,11 +770,13 @@ local function updateFlickDetector(self, forward, deltaTime)
 		self.accumulatedAngle = self.accumulatedAngle + angleDelta
 	elseif self.peakAngleSpeed > 0 then
 		if self.accumulatedAngle >= self.minAngleDelta then
-			strengthPercent = getSpeedPercent(self.peakAngleSpeed, self.minThresholdAngleSpeed, self.maxThresholdAngleSpeed)
-			if self.endFZ >= self.upDotThreshold then
-				isFlickUp = true
-			else
-				isFlick = true
+			local up = self.endFZ >= self.upDotThreshold
+			local minSpeed = up and self.upMinThresholdAngleSpeed or self.minThresholdAngleSpeed
+			local maxSpeed = up and self.upMaxThresholdAngleSpeed or self.maxThresholdAngleSpeed
+			if self.peakAngleSpeed > minSpeed then
+				strengthPercent = getSpeedPercent(self.peakAngleSpeed, minSpeed, maxSpeed)
+				isFlickUp = up
+				isFlick = not up
 			end
 		end
 		self.peakAngleSpeed = 0

@@ -1107,14 +1107,22 @@ local function updateDelay(delta)
 		if entry ~= nil then
 			entry.countDown = entry.countDown - delta
 			if entry.countDown < 0 then
+				-- Remove before calling so a callback that throws doesn't rerun every tick
+				table.remove(delayList, i)
 				if entry.func ~= nil then
 					entry.func()
 				end
-				-- Only remove if this slot is still the same entry (callback may have mutated the list).
-				if delayList[i] == entry then
-					table.remove(delayList, i)
-				end
 			end
+			--When using this method a call that throws will rerun every tick
+			-- if entry.countDown < 0 then
+			-- 	if entry.func ~= nil then
+			-- 		entry.func()
+			-- 	end
+			-- 	-- Only remove if this slot is still the same entry (callback may have mutated the list).
+			-- 	if delayList[i] == entry then
+			-- 		table.remove(delayList, i)
+			-- 	end
+			-- end
 		end
 	end
 end
@@ -3698,6 +3706,27 @@ function M.destroyComponent(component, destroyOwner, destroyChildren, showDebug)
 	end
 end
 
+-- Like destroyComponent but children owned by game actors (e.g. a gripped weapon) are detached instead of destroyed.
+-- Children on their own mod-spawned plain Actor are destroyed along with that actor.
+function M.destroyComponentSafe(component, destroyOwner, showDebug)
+	if M.validate_object(component) == nil then return end
+	local owner = component.GetOwner ~= nil and component:GetOwner() or nil
+	local children = component.AttachChildren or {}
+	for i = #children, 1, -1 do
+		local child = children[i]
+		local childOwner = child ~= nil and child.GetOwner ~= nil and child:GetOwner() or nil
+		if childOwner == owner then
+			M.destroyComponentSafe(child, false, showDebug)
+		elseif childOwner ~= nil and childOwner:get_class():get_full_name() == "Class /Script/Engine.Actor" then
+			M.destroyComponentSafe(child, true, showDebug)
+		elseif child ~= nil and child.DetachFromParent ~= nil then
+			if showDebug == true then M.print("[destroyComponentSafe] Detaching foreign child " .. child:get_full_name()) end
+			child:DetachFromParent(true, false)
+		end
+	end
+	M.destroyComponent(component, destroyOwner, false, showDebug)
+end
+
 function M.detachAndDestroyComponent(component, destroyOwner, destroyChildren)
 	if M.validate_object(component) ~= nil then
 		M.print("[detachAndDestroyComponent] Detaching " .. component:get_full_name())
@@ -4616,6 +4645,7 @@ M.initUEVR(uevr)
 -- function on_client_restart(newPawn)
 -- 	uevrUtils.print("Pawn changed to " .. newPawn:get_full_name())
 -- end
+---@diagnostic disable-next-line: undefined-global
 if disableHookFunctions ~= true then
 	--print("Hooking PlayerController ClientRestart function to detect pawn changes")
 	hook_function("Class /Script/Engine.PlayerController", "ClientRestart", true, nil,

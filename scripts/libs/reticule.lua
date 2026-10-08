@@ -258,6 +258,7 @@ local reticuleCollisionOffset = 10 --distance to offset reticule from hit locati
 
 --These three are runtime adjustments used by update() and get applied on top of currentReticuleOptions as further user controlled adjustments
 local isHidden = false
+local isConfigHidden = false
 local reticuleUpdateDistance = 200
 local reticuleUpdateScale = 1.0
 local reticuleUpdateRotation = {0.0, 0.0, 0.0}
@@ -301,7 +302,7 @@ end
 
 local function setReticuleAutoCreationTypeFromParameters()
     reticuleAutoCreationType = M.ReticuleType.NONE
-    if parameters["currentReticuleID"] ~= nil then
+    if not isConfigHidden and parameters["currentReticuleID"] ~= nil then
         if parameters["currentReticuleID"] == "_default" then
             reticuleAutoCreationType = M.ReticuleType.DEFAULT
         elseif parameters["currentReticuleID"] == "_custom" then
@@ -467,7 +468,11 @@ local createConfigMonitor = doOnce(function()
 	if reticuleConfig ~= nil then
 		reticuleConfig.registerParametersChangedCallback(function(paramName, paramValue)
 			if paramName == "hide" then
-				isHidden = paramValue
+				if isConfigHidden ~= paramValue then
+					isConfigHidden = paramValue
+					M.destroy()
+					setReticuleAutoCreationTypeFromParameters()
+				end
 			elseif paramName == "update_distance" then
 				reticuleUpdateDistance = paramValue
 			elseif paramName == "update_scale" then
@@ -563,7 +568,6 @@ end
 
 function M.setHidden(value)
 	isHidden = value
-	if reticuleConfig ~= nil then reticuleConfig.setValue("hide", value, true) end
 end
 
 function M.setDistance(value)
@@ -802,7 +806,7 @@ function M.update(originLocation, targetLocation, drawDistance, scale, rotation,
 		-- end
 
 		if targetLocation == nil then
-			--updateLineTracerSubscription() -- targetLocation will be correct on the next tick
+			if not lineTracerSubscribed and not weaponLineTracerSubscribed then updateLineTracerSubscription() end -- targetLocation will be correct on the next tick
 			targetLocation = lastTargetLocation
 		else
 			unsubscribeFromLineTracer()
@@ -875,6 +879,7 @@ function M.update(originLocation, targetLocation, drawDistance, scale, rotation,
 
 			local vector = uevrUtils.rotateVector(uevrUtils.vector(0, currentReticuleOptions.position_2d.X, currentReticuleOptions.position_2d.Y), rot)
 			local adjustedPosition = kismet_math_library:Add_VectorVector(temp_vec3f, vector)
+			if adjustedPosition.X ~= adjustedPosition.X then return end -- NaN permanently breaks the component since UE moves by delta
 
 			--local adjustedPosition = getOffsetWorldPosition(temp_vec3f, rot, currentReticuleOptions.position_2d.X, currentReticuleOptions.position_2d.Y)
 			reticuleComponent:K2_SetWorldLocationAndRotation(adjustedPosition, rot, false, reusable_hit_result, false)

@@ -29,6 +29,7 @@ local rigDefaults = {
     mesh = "",
 	mesh_location_offset = uevrUtils.vector(0,0,0),
 	mesh_rotation_offset = uevrUtils.rotator(0,0,0),
+	mesh_scale_offset = {1,1,1},
 	animation_mesh = "",
 	animation_location_offset = uevrUtils.vector(0,0,0),
 	animation_rotation_offset = uevrUtils.rotator(0,0,0),
@@ -43,6 +44,7 @@ local rigDefaults = {
 	debug_sphere_boneTwist = true,
 	debug_sphere_forearmTwist = true,
 	parent_type = M.ParentType.PAWN_ROOT,
+	enhanced_stabilization = false,
 	hide_body = false,
 	spine_bone_name = "",
 	left_shoulder_bone_name = "",
@@ -146,12 +148,26 @@ local function getConfigWidgets(m_paramManager)
                 initialValue = {0,0,0}
             },
             {
+                widgetType = "drag_float3",
+                id = widgetPrefix .. "mesh_scale_offset",
+                label = "Scale",
+                speed = 0.01,
+                range = {0.01, 10},
+                initialValue = {1,1,1}
+            },
+            {
                 widgetType = "combo",
                 id = widgetPrefix .. "parent_type",
                 label = "Rig Parent",
                 selections = {"Pawn RootComponent", "HMD"},
                 initialValue = 1,
                 width = 263
+            },
+            {
+                widgetType = "checkbox",
+                id = widgetPrefix .. "enhanced_stabilization",
+                label = "Enhanced Stabilization",
+                initialValue = false
             },
             {
                 widgetType = "checkbox",
@@ -904,7 +920,7 @@ local function updateSetting(key, value)
 	local profileId = getActiveProfileId()
 	if profileId == nil then return end
 
-	if key == "mesh" or key == "animation_mesh" or key == "animation_location_offset" or key == "animation_rotation_offset" or key == "mesh_location_offset" or key == "mesh_rotation_offset" or key == "show_debug_meshes" or key == "parent_type"  or key == "hide_body" or key == "spine_bone_name" or key == "left_shoulder_bone_name" or key == "right_shoulder_bone_name" or key == "shoulder_width_scale" or key == "animation_ik_pose_authoritative"
+	if key == "mesh" or key == "animation_mesh" or key == "animation_location_offset" or key == "animation_rotation_offset" or key == "mesh_location_offset" or key == "mesh_rotation_offset" or key == "mesh_scale_offset" or key == "show_debug_meshes" or key == "parent_type" or key == "enhanced_stabilization" or key == "hide_body" or key == "spine_bone_name" or key == "left_shoulder_bone_name" or key == "right_shoulder_bone_name" or key == "shoulder_width_scale" or key == "animation_ik_pose_authoritative"
 		or key == "debug_sphere_jointTarget" or key == "debug_sphere_effector" or key == "debug_sphere_solvedElbow" or key == "debug_sphere_solvedEnd"
 		or key == "debug_sphere_desiredPole" or key == "debug_sphere_boneElbow" or key == "debug_sphere_boneTwist" or key == "debug_sphere_forearmTwist" then
 		pmSet({profileId, key}, value, true)

@@ -44,6 +44,8 @@ local parameterDefaults = {
 	flick = {
 		minThresholdAngleSpeed = 400,
 		maxThresholdAngleSpeed = 900,
+		upMinThresholdAngleSpeed = 400,
+		upMaxThresholdAngleSpeed = 900,
 		minAngleDelta = 40.0,
 		upDotThreshold = 0.75,
 		cooldownTime = 0.5,
@@ -138,6 +140,7 @@ local swingHelpLines = {
 local flickHelpLines = {
 	"Min Angle Speed (deg/s) - How fast the controller tip must rotate before a flick counts. Higher = ignore slow tip tilts; lower = easier to trigger with a light wrist snap.",
 	"Max Angle Speed (deg/s) - Caps how hard a flick feels for strength (0-1). Does not block detection. Higher = need a faster snap to reach full strength; lower = moderate snaps report as strong.",
+	"Up Min / Up Max Angle Speed (deg/s) - Same as Min / Max Angle Speed, but used for flick-up. The Min / Max values above then apply to flick down only.",
 	"Min Angle Delta (deg) - Minimum tip-direction change across the motion. Higher = require a bigger wrist turn; lower = allow smaller snaps.",
 	"Up Dot Threshold (0-1) - How closely the tip must finish pointing upward to count as flick-up / yank. Higher = must finish more straight up; lower = allow a wider upward cone.",
 	"Cooldown (sec) - How long after a flick before another can fire. Higher = fewer rapid repeats; lower = can chain flicks sooner.",
@@ -298,9 +301,12 @@ local function getConfigWidgets(m_paramManager)
 			initialOpen = true,
 			label = "Wrist Flick"
 		},
-		expandArray(getGestureTestWidgets, "flick"),
+		expandArray(getGestureTestWidgets, "flick", "Test Flick Down"),
+		expandArray(getGestureTestWidgets, "flick_up", "Test Flick Up"),
 			floatWidget({"flick", "minThresholdAngleSpeed"}, "Min Angle Speed (deg/s)", 1, {0, 3000}),
 			floatWidget({"flick", "maxThresholdAngleSpeed"}, "Max Angle Speed (deg/s)", 1, {0, 3000}),
+			floatWidget({"flick", "upMinThresholdAngleSpeed"}, "Up Min Angle Speed (deg/s)", 1, {0, 3000}),
+			floatWidget({"flick", "upMaxThresholdAngleSpeed"}, "Up Max Angle Speed (deg/s)", 1, {0, 3000}),
 			floatWidget({"flick", "minAngleDelta"}, "Min Angle Delta (deg)", 0.5, {0, 180}),
 			floatWidget({"flick", "upDotThreshold"}, "Up Dot Threshold (0-1)", 0.01, {0, 1}),
 			floatWidget({"flick", "cooldownTime"}, "Cooldown (sec)", 0.01, {0, 10}),
@@ -485,6 +491,7 @@ local GESTURE_STOP_TWO_HANDED = 20
 local GESTURE_PUSH = 21
 local GESTURE_PUSH_TWO_HANDED = 22
 local GESTURE_FLICK = 23
+local GESTURE_FLICK_UP = 24
 local GESTURE_SWING = 25
 local MOMENTARY_ACTIVE_MS = 500
 
@@ -648,10 +655,11 @@ registerGestureTest("swing", GESTURE_SWING, {
 })
 registerGestureTest("flick", GESTURE_FLICK, {
 	momentary = true,
-	callbacks = {
-		"on_gesture_flick",
-		"on_gesture_flick_up",
-	},
+	callbacks = { "on_gesture_flick" },
+})
+registerGestureTest("flick_up", GESTURE_FLICK_UP, {
+	momentary = true,
+	callbacks = { "on_gesture_flick_up" },
 })
 registerGestureTest("chest", GESTURE_CHESTGRAB, {
 	momentary = false,

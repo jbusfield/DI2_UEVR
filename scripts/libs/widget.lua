@@ -1,3 +1,89 @@
+-- Credits: Portions of the following code courtesy of LukasBlaster where noted
+
+--[[
+Usage
+    Drop the lib folder containing this file into your project folder
+    Add code like this in your script:
+		local widgetModule = require('libs/widget')
+
+    World space image components
+		UUserWidget is abstract and Lua cannot define new widget classes, so widgetModule.createImageComponent
+		borrows a loaded Widget Blueprint class to act as the host. The host is chosen automatically and generically:
+		it must derive directly from UserWidget and have no Blueprint event graph, so no game logic can run against
+		the replaced content. The host's original widget tree is discarded and replaced with an empty CanvasPanel
+		before the image is added. The chosen class is cached and re-chosen after each level change.
+
+    Widget exposure compensation
+		World space WidgetComponents are affected by the game's auto-exposure, so they look dark in daylight and
+		washed out at night. These functions counteract that by tinting the component by 2^(EV100 * 1.1 + stops).
+		EV100 is the game's current auto-exposure value. Reading it is game specific (stock Unreal does not expose
+		it to Lua), so your script supplies it. Pass nil to assume daylight (EV 11).
+
+	Available functions:
+
+    widgetModule.createImageComponent(imageSize, (optional)options) - creates a WidgetComponent hosting a single
+		centered Image. Returns component, image or nil if no host widget class could be found or created.
+		imageSize is the image's maximum dimension. options are passed to uevrUtils.createWidgetComponent
+		(manualAttachment, relativeTransform, deferredFinish, parent, tag, removeFromViewport, twoSided, drawSize).
+		The returned image is a widgetModule.Image, so use image:setTexture("Name.png") to change what it shows.
+        example:
+            local transform = uevrUtils.get_transform(nil, nil, {X=0.08, Y=0.08, Z=0.08})
+            local component, image = widgetModule.createImageComponent(40, { relativeTransform = transform, twoSided = true, drawSize = uevrUtils.vector2D(120, 120) })
+            if component ~= nil then
+                component:K2_AttachTo(handComponent, uevrUtils.fname_from_string("WandSocket"), 0, false)
+                image:setTexture("Stupefy.png")
+            end
+
+    widgetModule.applyWidgetComponentExposureFix(component, ev100, (optional)stops) - one time setup for an
+		exposure compensated WidgetComponent. Enables gamma correction, disables the HDR render target and
+		applies the initial exposure. stops is a brightness offset where each step doubles or halves (default 0).
+        For games where the environment doesnt affect the widget you can just call this once and not call
+        widgetModule.setWidgetComponentExposure repeatedly.
+        example:
+            widgetModule.applyWidgetComponentExposureFix(component, getEV100(), configui.getValue("my_icon_exposure"))
+
+    widgetModule.setWidgetComponentExposure(component, (optional)ev100, (optional)stops) - updates the exposure tint
+		of a WidgetComponent so its on-screen brightness stays consistent as scene lighting changes. Call
+		applyWidgetComponentExposureFix once first, then call this periodically (about once a second is plenty;
+		auto-exposure adapts slowly). 
+
+		How it works:
+			The tint applied is 2^(ev100 * 1.1 + stops), set via SetTintColorAndOpacity on R, G and B.
+			Auto-exposure darkens the scene by roughly 2^EV100, so tinting by 2^EV100 cancels it out. The extra 1.1
+			slope makes the widget slightly brighter in bright scenes, where it would otherwise look washed out
+			next to the scene around it.
+
+		Params:
+			component - the WidgetComponent to update (required)
+
+			ev100 - (optional) the game's current auto-exposure value in EV100 units. Higher means a brighter
+				scene. Read this from the game every time you call; stock Unreal does not expose it to Lua, so
+				each game needs its own source (e.g. Hogwarts Legacy:
+				RenderSettingsSingleton.LastFrameExposure.Filtered.AutoExposureEV100).
+				If nil, 11 (typical daylight) is assumed, which looks right outdoors in daytime but too bright
+				in dark scenes.
+				Typical values (varies per game):
+					below 0 to 3 - night / very dark interiors
+					4 to 8       - lit interiors, dusk
+					9 to 13      - overcast to full daylight
+
+			stops - (optional, default 0) user brightness offset in exposure stops. Each +1 doubles the
+				brightness and each -1 halves it, by the same proportion in all lighting conditions.
+				Recommended range: -5 to 5. Start at 0 and adjust; Hogwarts Legacy looks right around -1.
+				Ideal for a configui slider, e.g.
+					{ widgetType = "slider_float", id = "my_icon_exposure", label = "Icon Brightness", initialValue = 0, speed = 0.1, range = {-5, 5} }
+        example:
+            setInterval(1000, function()
+                widgetModule.setWidgetComponentExposure(component, getEV100(), configui.getValue("my_icon_exposure"))
+            end)
+
+    widgetModule.destroyAll() - destroys all created images and clears the cached host widget class.
+		Called automatically before level changes.
+        example:
+            widgetModule.destroyAll()
+
+]]--
+
 local uevrUtils = require('libs/uevr_utils')
 local plugin = require('libs/core/plugin')
 
@@ -58,8 +144,9 @@ function Image.destroyAll()
 	Image.textureCache = {}
 end
 
-function Image:setTexture(imageName, hideIfMissing)
+function Image:setTexture(imageName, path, hideIfMissing)
 	if hideIfMissing == nil then hideIfMissing = true end
+    if path == nil then path = "images/" end
 	local function hideMissing()
 		if hideIfMissing and self.image ~= nil then
 			self.image:SetVisibility(1) -- Collapsed
@@ -68,7 +155,7 @@ function Image:setTexture(imageName, hideIfMissing)
 	end
 	local function importTexture()
 		local result = plugin.executeFunction(kismet_rendering_library, "ImportFileAsTexture2D",
-			uevrUtils.get_world(), "$data/images/" .. imageName)
+			uevrUtils.get_world(), "$data/" .. path .. imageName)
 		local texture = result and result.ReturnValue
 		if uevrUtils.getValid(texture) == nil then return nil end
 		if M.enableTextureCache then
@@ -116,8 +203,7 @@ function Image:setTexture(imageName, hideIfMissing)
 	end
 	return true
 end
-function Image:setLayout(opts)
-	if self.slot == nil then return end
+local function setSlotLayout(slot, opts)
 	opts = opts or {}
 
 	local offset = opts.offset or opts.position or uevrUtils.vector2D(0, 0)
@@ -125,19 +211,26 @@ function Image:setLayout(opts)
 
 	local ax, ay = 0, 0
 	if align ~= nil then
-		if type(align) ~= "table" or align[1] == nil then return end
+		if type(align) ~= "table" or align[1] == nil then return false end
 		ax, ay = align[1], align[2]
 	end
 
 	local pt = uevrUtils.vector2D(ax, ay)
-	local anchors = self.slot:GetAnchors()
+	local anchors = slot:GetAnchors()
 	anchors.Minimum = pt
 	anchors.Maximum = pt
-	self.slot:SetAnchors(anchors)
-	self.slot:SetAlignment(pt)
-	self.slot:SetPosition(offset)
-	self.slot:SetSize(self.drawSize)
-	self.slot:SetZOrder(opts.zOrder or 999)
+	slot:SetAnchors(anchors)
+	slot:SetAlignment(opts.alignment or pt)
+	slot:SetPosition(offset)
+	slot:SetZOrder(opts.zOrder or 999)
+	return true
+end
+
+function Image:setLayout(opts)
+	if self.slot == nil then return end
+	if setSlotLayout(self.slot, opts) then
+		self.slot:SetSize(self.drawSize)
+	end
 end
 
 function Image:addToWidget(widget, opts)
@@ -178,8 +271,182 @@ end
 
 M.Image = Image
 
+local Text = {}
+Text.__index = Text
+Text.createdTexts = {}
+Text.ALIGN = Image.ALIGN
+function Text.new(text)
+	local self = setmetatable({}, Text)
+	self.text = text or ""
+	self.textBlock = nil
+	self.slot = nil
+	table.insert(Text.createdTexts, self)
+	return self
+end
+function Text.destroyAll()
+	for i = 1, #Text.createdTexts do
+		local inst = Text.createdTexts[i]
+		if inst ~= nil and inst.remove ~= nil then
+			inst:remove()
+		end
+	end
+	Text.createdTexts = {}
+end
+
+-- Native UEVR Lua cannot marshal FText, so SetText goes through the plugin
+function Text:setText(text)
+	self.text = text or ""
+	if self.textBlock ~= nil then
+		plugin.executeFunction(self.textBlock, "SetText", self.text)
+	end
+end
+
+-- hex is "#RRGGBB" or "#RRGGBBAA"
+function Text:setColor(hex)
+	self.color = hex
+	if self.textBlock == nil or type(hex) ~= "string" then return end
+	local function channel(i, default) return (tonumber(hex:sub(i, i + 1), 16) or default) / 255 end
+	local color = self.textBlock.ColorAndOpacity
+	color.SpecifiedColor = uevrUtils.color_from_rgba(channel(2, 0), channel(4, 0), channel(6, 0), channel(8, 255))
+	self.textBlock:SetColorAndOpacity(color)
+end
+
+-- Font and Size FName casing varies between game sessions
+local function applyFont(text)
+	if text.textBlock == nil or (text.fontSize == nil and text.fontPath == nil and text.typeface == nil) then return end
+	local font = text.textBlock.Font or text.textBlock.font
+	if text.fontSize ~= nil then
+		if font.Size ~= nil then font.Size = text.fontSize else font.size = text.fontSize end
+	end
+	if text.fontPath ~= nil then
+		local fontObject = uevrUtils.getLoadedAsset(text.fontPath)
+		if fontObject ~= nil then font.FontObject = fontObject end
+	end
+	if text.typeface ~= nil then
+		font.TypefaceFontName = uevrUtils.fname_from_string(text.typeface)
+	end
+	text.textBlock:SetFont(font)
+end
+
+function Text:setFontSize(size)
+	self.fontSize = size
+	applyFont(self)
+end
+
+-- fontPath is a font asset path e.g. "/Engine/EngineFonts/Roboto.Roboto", typeface is optional e.g. "Regular", "Bold", "Italic"
+function Text:setFont(fontPath, typeface)
+	self.fontPath = fontPath
+	self.typeface = typeface
+	applyFont(self)
+end
+
+function Text:setLayout(opts)
+	if self.slot == nil then return end
+	if setSlotLayout(self.slot, opts) then
+		self.slot:SetAutoSize(true)
+	end
+end
+
+function Text:addToWidget(widget, opts)
+	if widget == nil or widget.WidgetTree == nil then return false end
+	local panel = widget.WidgetTree.RootWidget
+	if panel == nil or panel.AddChildToCanvas == nil then return false end
+	if self.textBlock == nil then
+		self.textBlock = uevrUtils.spawn_object("Class /Script/UMG.TextBlock", widget.WidgetTree)
+		if self.textBlock == nil then return false end
+		self.slot = panel:AddChildToCanvas(self.textBlock)
+		self:setText(self.text)
+		if self.color ~= nil then self:setColor(self.color) end
+		applyFont(self)
+	end
+	if opts ~= nil and opts.X ~= nil then
+		opts = { position = opts }
+	end
+	self:setLayout(opts or { position = uevrUtils.vector2D(50, 50) })
+	return true
+end
+
+function Text:setPosition(position2D)
+	self:setLayout({ position = position2D })
+end
+
+function Text:remove()
+	if uevrUtils.getValid(self.textBlock) ~= nil and self.textBlock.RemoveFromParent ~= nil then
+		self.textBlock:RemoveFromParent()
+	end
+	self.textBlock = nil
+	self.slot = nil
+end
+
+M.Text = Text
+
+-----------------------------------------------------------------
+-- Inspiration and portions of the following code courtesy of LukasBlaster
+local hostWidgetClassName = nil
+-- UUserWidget is abstract and Lua cannot define new widget classes, so borrow a loaded Widget Blueprint class.
+-- Direct UserWidget children with no ubergraph have no native or Blueprint logic to run against the replaced tree.
+local function getGenericUserWidgetClassName()
+	if hostWidgetClassName ~= nil then return hostWidgetClassName end
+	local userWidgetName = "Class /Script/UMG.UserWidget"
+	local blueprintClass = uevrUtils.get_class("Class /Script/UMG.WidgetBlueprintGeneratedClass")
+	-- Including defaults yields a CDO for every loaded widget class, live or not
+	for _, widget in pairs(uevrUtils.find_all_instances(userWidgetName, true) or {}) do
+		local cls = widget:get_class()
+		local super = cls:get_super_struct()
+        --check that the widget we are trying to hijack does not aleady have blueprint functions or c++ functions
+        --that might cause unexpected behavior. If no widgets are found using this restriction for some reason this check could be relaxed
+		--native classes have no UberGraphFunction field at all, so require a Blueprint class
+		if super ~= nil and super:get_full_name() == userWidgetName and cls:is_a(blueprintClass) and cls.UberGraphFunction == nil then
+			hostWidgetClassName = cls:get_full_name()
+			M.print("Using host widget class " .. hostWidgetClassName)
+			return hostWidgetClassName
+		end
+	end
+	M.print("No host widget class found", LogLevel.Warning)
+end
+
+-- Creates a WidgetComponent hosting an Image. The host's original tree is replaced with a fresh CanvasPanel root
+-- before the component builds it. options are passed to uevrUtils.createWidgetComponent
+function M.createImageComponent(imageSize, options)
+	local className = getGenericUserWidgetClassName()
+	if className == nil then return nil end
+	local hostWidget = uevrUtils.getValid(uevrUtils.createWidget(className))
+	if hostWidget == nil then return nil end
+	hostWidget.WidgetTree.RootWidget = uevrUtils.spawn_object("Class /Script/UMG.CanvasPanel", hostWidget.WidgetTree)
+	local component = uevrUtils.createWidgetComponent(hostWidget, options)
+	if component == nil then return nil end
+	local image = Image.new(imageSize)
+	image:addToWidget(hostWidget, { align = Image.ALIGN.CENTER })
+	return component, image
+end
+
+-- World space WidgetComponents render through Widget3DPassThrough materials, which multiply by TintColorAndOpacity.
+-- Auto-exposure scales the scene by ~1/(1.2 * 2^EV100), so tinting by 2^EV100 cancels it. The 1.1 slope adds extra
+-- brightness in bright scenes, where widgets otherwise look washed out against the scene.
+-- ev100 is the game's current auto-exposure (nil assumes daylight), stops is a user brightness offset (each step doubles)
+function M.setWidgetComponentExposure(component, ev100, stops)
+	if uevrUtils.getValid(component) == nil then return end
+	local boost = 2 ^ ((ev100 or 11) * 1.1 + (stops or 0))
+	component:SetTintColorAndOpacity(uevrUtils.color_from_rgba(boost, boost, boost, 1.0, true))
+end
+
+-- One-time setup for an exposure compensated WidgetComponent: gamma correction on, HDR render target off, then applies the exposure
+function M.applyWidgetComponentExposureFix(component, ev100, stops)
+	if uevrUtils.getValid(component) == nil then return end
+	M.setWidgetComponentExposure(component, ev100, stops)
+	component.bApplyGammaCorrection = true
+	local rt = component:GetRenderTarget()
+	if uevrUtils.getValid(rt) ~= nil then
+		rt.bHDR = false
+	end
+	component:RequestRenderUpdate()
+end
+-----------------------------------------------------------------
+
 function M.destroyAll()
 	Image.destroyAll()
+	Text.destroyAll()
+	hostWidgetClassName = nil
 end
 
 uevrUtils.registerPreLevelChangeCallback(function()

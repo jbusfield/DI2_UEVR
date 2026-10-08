@@ -133,7 +133,7 @@ local function setColliderProperties(collider, id)
             end
             collider.bGenerateOverlapEvents = profileData.generate_overlap_events
         end
-        collider:SetVisibility(profileData.visible)
+        collider:SetHiddenInGame(not profileData.visible)
         --collider:SetMassOverrideInKg(uevrUtils.fname_from_string(""), 50, true)
         --uevrUtils.set_component_relative_transform(collider, profileData.position, profileData.rotation)
         --uevrUtils.set_component_relative_transform(collider, uevrUtils.vector(30,30,30), profileData.rotation)

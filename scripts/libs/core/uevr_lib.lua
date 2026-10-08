@@ -13,7 +13,7 @@ end
 function M.find_required_object(name)
     local obj = uevr.api:find_uobject(name)
     if not obj then
-        print("[CoreLib]Can not find required object:" .. name)
+        print("[uevr_lib] *********** Can not find required object:" .. name)
         return nil
     end
 
@@ -28,7 +28,7 @@ function M.get_class(name, clearCache)
 			return uevr.api:find_uobject(name)
 		end)
 		if not ok then
-			print("[uevr_utils] Error finding class in get_class handled properly", name, result)
+			print("[uevr_lib] Error finding class in get_class handled properly", name, result)
 			return nil
 		end
 		classCache[name] = result

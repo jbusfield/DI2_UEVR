@@ -362,7 +362,7 @@ local developerWidgets = spliceableInlineArray{
                 {
                     widgetType = "combo",
                     id = widgetPrefix .. "material_finder_list",
-                    label = "Meshes",
+                    label = "Materials",
                     selections = searchMaterialList,
                     initialValue = 1,
                 },

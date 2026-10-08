@@ -144,9 +144,12 @@ Usage
 		example:
 			input.setRotationModeRotationDisabled(true)
 
-	input.setStickTurnDisabled(val) - when true, skips snap/smooth turn from thumbstick X
+	input.setStickTurnDisabled(val, (optional)key) - when true, skips snap/smooth turn from thumbstick X
 		only. Camera body-yaw lock still applies (unlike setRotationModeRotationDisabled).
+		Each key is tracked separately; turning stays disabled while any key is true.
+		Omitting key uses "default".
 		example:
+			input.setStickTurnDisabled(true, "mount")
 			input.setStickTurnDisabled(true)
 
 	input.setPlayerControllerRotationFollowsBody(followsBody) - when true (default, legacy),
@@ -429,8 +432,11 @@ function M.setRotationModeRotationDisabled(val)
 end
 
 -- Stick yaw only; does not disable VR camera body-yaw lock.
-function M.setStickTurnDisabled(val)
-	status.stickTurnDisabled = val == true
+-- Disabled while any key is set; a call without a key uses "default".
+function M.setStickTurnDisabled(val, key)
+	status.stickTurnDisablers = status.stickTurnDisablers or {}
+	status.stickTurnDisablers[key or "default"] = val == true or nil
+	status.stickTurnDisabled = next(status.stickTurnDisablers) ~= nil
 end
 
 function M.setMeshRelativePositionDisabled(val)
