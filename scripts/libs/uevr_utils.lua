@@ -405,7 +405,8 @@ Usage
 		example:
 			uevrUtils.stopFadeCamera()  -- immediately removes any camera fade
 			
-	uevrUtils.enableCameraLerp(state, pitch, yaw, roll) - enables/disables camera lerping for specified axes
+	uevrUtils.enableCameraLerp(state, pitch, yaw, roll, (optional)speed) - enables/disables camera lerping for specified axes
+		speed defaults to 0.1 when enabling and 1.0 when disabling
 		example:
 			uevrUtils.enableCameraLerp(true, true, true, false)  -- enable lerp for pitch and yaw only
 			
@@ -1489,7 +1490,7 @@ local function executeUEVRCallbacksWithPriorityBooleanResult(callbackName, ...)
 			local funcResult, funcPriority = entry.func(table.unpack({...}))
 			if funcPriority == nil then funcPriority = 0 end
 			if funcResult ~= nil and funcPriority >= priority then
-				result = result or funcResult
+				result = funcResult
 				priority = funcPriority
 			end
 		end
@@ -3489,9 +3490,7 @@ function M.enableCameraLerp(state, pitch, yaw, roll, speed)
 	if roll == true then
 		uevr.params.vr.set_mod_value("VR_LerpCameraRoll", state and "true" or "false")
 	end
-	if speed ~= nil then
-		uevr.params.vr.set_mod_value("VR_LerpCameraSpeed", speed)
-	end
+	uevr.params.vr.set_mod_value("VR_LerpCameraSpeed", speed or (state and 0.1 or 1.0))
 end
 
 function M.enableUIFollowsView(state)
@@ -4034,14 +4033,26 @@ function M.createSceneCaptureComponent(options)
 	return component
 end
 
+-- Prefers a widget whose top level UserWidget is in the viewport, since stale copies (e.g. an old HUD after loading a save)
+-- can stay alive with the same owning pawn
 function M.getActiveWidgetByClass(className)
 	local widgets = M.find_all_instances(className, false)
 	if widgets ~= nil and M.getValid(pawn) ~= nil then
+		local widgetTreeClass = M.get_class("Class /Script/UMG.WidgetTree")
+		local fallback = nil
 		for _, widget in ipairs(widgets) do
 			if widget:GetOwningPlayerPawn() == pawn then
-				return widget
+				local root = widget
+				local outer = root:get_outer()
+				while outer ~= nil and outer:is_a(widgetTreeClass) do
+					root = outer:get_outer()
+					outer = root:get_outer()
+				end
+				if root:IsInViewport() then return widget end
+				fallback = fallback or widget
 			end
 		end
+		return fallback
 	end
 end
 

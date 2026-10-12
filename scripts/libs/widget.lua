@@ -6,76 +6,25 @@ Usage
     Add code like this in your script:
 		local widgetModule = require('libs/widget')
 
-    World space image components
-		UUserWidget is abstract and Lua cannot define new widget classes, so widgetModule.createImageComponent
+    Image host widgets
+		UUserWidget is abstract and Lua cannot define new widget classes, so widgetModule.createImageWidget
 		borrows a loaded Widget Blueprint class to act as the host. The host is chosen automatically and generically:
 		it must derive directly from UserWidget and have no Blueprint event graph, so no game logic can run against
 		the replaced content. The host's original widget tree is discarded and replaced with an empty CanvasPanel
 		before the image is added. The chosen class is cached and re-chosen after each level change.
-
-    Widget exposure compensation
-		World space WidgetComponents are affected by the game's auto-exposure, so they look dark in daylight and
-		washed out at night. These functions counteract that by tinting the component by 2^(EV100 * 1.1 + stops).
-		EV100 is the game's current auto-exposure value. Reading it is game specific (stock Unreal does not expose
-		it to Lua), so your script supplies it. Pass nil to assume daylight (EV 11).
+		To show it in world space use widgetComponent.createImageComponent (libs/widgetcomponent).
 
 	Available functions:
 
-    widgetModule.createImageComponent(imageSize, (optional)options) - creates a WidgetComponent hosting a single
-		centered Image. Returns component, image or nil if no host widget class could be found or created.
-		imageSize is the image's maximum dimension. options are passed to uevrUtils.createWidgetComponent
-		(manualAttachment, relativeTransform, deferredFinish, parent, tag, removeFromViewport, twoSided, drawSize).
-		The returned image is a widgetModule.Image, so use image:setTexture("Name.png") to change what it shows.
+    widgetModule.createHostWidget() - creates an empty host UserWidget whose root is a CanvasPanel.
+		Returns hostWidget or nil if no host widget class could be found or created.
+
+    widgetModule.createImageWidget(imageSize) - creates a host UserWidget containing a single centered Image.
+		Returns hostWidget, image or nil if no host widget class could be found or created.
+		imageSize is the image's maximum dimension. The returned image is a widgetModule.Image, so use
+		image:setTexture("Name.png") to change what it shows.
         example:
-            local transform = uevrUtils.get_transform(nil, nil, {X=0.08, Y=0.08, Z=0.08})
-            local component, image = widgetModule.createImageComponent(40, { relativeTransform = transform, twoSided = true, drawSize = uevrUtils.vector2D(120, 120) })
-            if component ~= nil then
-                component:K2_AttachTo(handComponent, uevrUtils.fname_from_string("WandSocket"), 0, false)
-                image:setTexture("Stupefy.png")
-            end
-
-    widgetModule.applyWidgetComponentExposureFix(component, ev100, (optional)stops) - one time setup for an
-		exposure compensated WidgetComponent. Enables gamma correction, disables the HDR render target and
-		applies the initial exposure. stops is a brightness offset where each step doubles or halves (default 0).
-        For games where the environment doesnt affect the widget you can just call this once and not call
-        widgetModule.setWidgetComponentExposure repeatedly.
-        example:
-            widgetModule.applyWidgetComponentExposureFix(component, getEV100(), configui.getValue("my_icon_exposure"))
-
-    widgetModule.setWidgetComponentExposure(component, (optional)ev100, (optional)stops) - updates the exposure tint
-		of a WidgetComponent so its on-screen brightness stays consistent as scene lighting changes. Call
-		applyWidgetComponentExposureFix once first, then call this periodically (about once a second is plenty;
-		auto-exposure adapts slowly). 
-
-		How it works:
-			The tint applied is 2^(ev100 * 1.1 + stops), set via SetTintColorAndOpacity on R, G and B.
-			Auto-exposure darkens the scene by roughly 2^EV100, so tinting by 2^EV100 cancels it out. The extra 1.1
-			slope makes the widget slightly brighter in bright scenes, where it would otherwise look washed out
-			next to the scene around it.
-
-		Params:
-			component - the WidgetComponent to update (required)
-
-			ev100 - (optional) the game's current auto-exposure value in EV100 units. Higher means a brighter
-				scene. Read this from the game every time you call; stock Unreal does not expose it to Lua, so
-				each game needs its own source (e.g. Hogwarts Legacy:
-				RenderSettingsSingleton.LastFrameExposure.Filtered.AutoExposureEV100).
-				If nil, 11 (typical daylight) is assumed, which looks right outdoors in daytime but too bright
-				in dark scenes.
-				Typical values (varies per game):
-					below 0 to 3 - night / very dark interiors
-					4 to 8       - lit interiors, dusk
-					9 to 13      - overcast to full daylight
-
-			stops - (optional, default 0) user brightness offset in exposure stops. Each +1 doubles the
-				brightness and each -1 halves it, by the same proportion in all lighting conditions.
-				Recommended range: -5 to 5. Start at 0 and adjust; Hogwarts Legacy looks right around -1.
-				Ideal for a configui slider, e.g.
-					{ widgetType = "slider_float", id = "my_icon_exposure", label = "Icon Brightness", initialValue = 0, speed = 0.1, range = {-5, 5} }
-        example:
-            setInterval(1000, function()
-                widgetModule.setWidgetComponentExposure(component, getEV100(), configui.getValue("my_icon_exposure"))
-            end)
+            local hostWidget, image = widgetModule.createImageWidget(40)
 
     widgetModule.destroyAll() - destroys all created images and clears the cached host widget class.
 		Called automatically before level changes.
@@ -405,41 +354,23 @@ local function getGenericUserWidgetClassName()
 	M.print("No host widget class found", LogLevel.Warning)
 end
 
--- Creates a WidgetComponent hosting an Image. The host's original tree is replaced with a fresh CanvasPanel root
--- before the component builds it. options are passed to uevrUtils.createWidgetComponent
-function M.createImageComponent(imageSize, options)
+-- Creates an empty host UserWidget. The host's original tree is replaced with a fresh CanvasPanel root
+function M.createHostWidget()
 	local className = getGenericUserWidgetClassName()
 	if className == nil then return nil end
 	local hostWidget = uevrUtils.getValid(uevrUtils.createWidget(className))
 	if hostWidget == nil then return nil end
 	hostWidget.WidgetTree.RootWidget = uevrUtils.spawn_object("Class /Script/UMG.CanvasPanel", hostWidget.WidgetTree)
-	local component = uevrUtils.createWidgetComponent(hostWidget, options)
-	if component == nil then return nil end
+	return hostWidget
+end
+
+-- Creates a host UserWidget containing a centered Image
+function M.createImageWidget(imageSize)
+	local hostWidget = M.createHostWidget()
+	if hostWidget == nil then return nil end
 	local image = Image.new(imageSize)
 	image:addToWidget(hostWidget, { align = Image.ALIGN.CENTER })
-	return component, image
-end
-
--- World space WidgetComponents render through Widget3DPassThrough materials, which multiply by TintColorAndOpacity.
--- Auto-exposure scales the scene by ~1/(1.2 * 2^EV100), so tinting by 2^EV100 cancels it. The 1.1 slope adds extra
--- brightness in bright scenes, where widgets otherwise look washed out against the scene.
--- ev100 is the game's current auto-exposure (nil assumes daylight), stops is a user brightness offset (each step doubles)
-function M.setWidgetComponentExposure(component, ev100, stops)
-	if uevrUtils.getValid(component) == nil then return end
-	local boost = 2 ^ ((ev100 or 11) * 1.1 + (stops or 0))
-	component:SetTintColorAndOpacity(uevrUtils.color_from_rgba(boost, boost, boost, 1.0, true))
-end
-
--- One-time setup for an exposure compensated WidgetComponent: gamma correction on, HDR render target off, then applies the exposure
-function M.applyWidgetComponentExposureFix(component, ev100, stops)
-	if uevrUtils.getValid(component) == nil then return end
-	M.setWidgetComponentExposure(component, ev100, stops)
-	component.bApplyGammaCorrection = true
-	local rt = component:GetRenderTarget()
-	if uevrUtils.getValid(rt) ~= nil then
-		rt.bHDR = false
-	end
-	component:RequestRenderUpdate()
+	return hostWidget, image
 end
 -----------------------------------------------------------------
 

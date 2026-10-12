@@ -2138,8 +2138,8 @@ function Rig:solveTwoBone(solverParams)
 	-- compToWorld MUST be fetched every tick: the mesh is parented to pawn.RootComponent,
 	-- so any body rotation changes this transform. Caching it causes the hand to drift
 	-- away from the controller whenever the pawn rotates.
-	if uevrUtils.getValid(mesh) == nil or mesh.K2_GetComponentToWorld == nil then
-		M.print("SolveVRArmIK: Mesh has no K2_GetComponentToWorld")
+	if uevrUtils.getValid(mesh) == nil or mesh.K2_GetComponentToWorld == nil or mesh.GetBoneLocationByName == nil then
+		M.print("SolveVRArmIK: Mesh has no K2_GetComponentToWorld or GetBoneLocationByName")
 		return
 	end
 	local compToWorld = mesh:K2_GetComponentToWorld()

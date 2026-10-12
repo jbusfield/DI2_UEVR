@@ -104,7 +104,7 @@ Usage
     ui.onUpdate(stateKey, func) - registers a callback invoked when a UI state value changes.
         Callback receives (value, priority). value may be true, false, or nil (default/cleared).
         Valid stateKey values: viewLocked, screen2D, roomscaleEnabled, decouplePitch, autoAdjustUI, inputEnabled,
-        handsEnabled, remapEnabled, fadeCamera, pawnArmBones, controllerMouse
+        handsEnabled, remapEnabled, fadeCamera, pawnArmBones, controllerMouse, motionSicknessCompensation
         example:
             ui.onUpdate("remapEnabled", function(value)
                 print("remapEnabled changed:", value)
@@ -204,7 +204,8 @@ local stateConfigWidget = {
     {stateKey = "remapEnabled", valueKey = "remapWhenActive"},
     {stateKey = "fadeCamera", valueKey = "fadeCameraWhenActive"},
     {stateKey = "pawnArmBones", valueKey = "pawnArmBonesWhenActive"},
-    {stateKey = "controllerMouse", valueKey = "controllerMouseWhenActive"}
+    {stateKey = "controllerMouse", valueKey = "controllerMouseWhenActive"},
+    {stateKey = "motionSicknessCompensation", valueKey = "motionSicknessCompensationWhenActive"}
 }
 
 local stateConfigGame = {
@@ -218,7 +219,8 @@ local stateConfigGame = {
     {stateKey = "remapEnabled", valueKey = "remapWhenInGameState"},
     {stateKey = "fadeCamera", valueKey = "fadeCameraWhenInGameState"},
     {stateKey = "pawnArmBones", valueKey = "pawnArmBonesWhenInGameState"},
-    {stateKey = "controllerMouse", valueKey = "controllerMouseWhenInGameState"}
+    {stateKey = "controllerMouse", valueKey = "controllerMouseWhenInGameState"},
+    {stateKey = "motionSicknessCompensation", valueKey = "motionSicknessCompensationWhenInGameState"}
 }
 
 local gameStates = {"cutscene", "paused", "character_hidden"}
@@ -416,6 +418,10 @@ end)
 
 uevrUtils.registerUEVRCallback("is_controller_mouse_enabled", function()
     return M.isControllerMouseEnabledWithPriority()
+end)
+
+uevrUtils.registerUEVRCallback("is_in_motion_sickness_causing_scene", function()
+    return uiState["motionSicknessCompensation"], uiState["motionSicknessCompensationPriority"]
 end)
 
 local customUIState = {}
@@ -785,9 +791,9 @@ local isInMotionSicknessCausingSceneLast = false
 uevrUtils.setInterval(500, function()
     M.forceUpdate()
 
-    local m_isInMotionSicknessCausingScene, priority = executeIsInMotionSicknessCausingSceneCallback()
+    local m_isInMotionSicknessCausingScene = executeIsInMotionSicknessCausingSceneCallback() or false
 	if m_isInMotionSicknessCausingScene ~= isInMotionSicknessCausingSceneLast then
-		isInMotionSicknessCausingSceneLast = m_isInMotionSicknessCausingScene or false
+		isInMotionSicknessCausingSceneLast = m_isInMotionSicknessCausingScene
 		M.setIsInMotionSicknessCausingScene(m_isInMotionSicknessCausingScene)
 	end
 end)

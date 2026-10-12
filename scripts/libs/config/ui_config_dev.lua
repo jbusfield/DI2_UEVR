@@ -25,7 +25,8 @@ local stateConfigWidget = {
     {stateKey = "remapEnabled", valueKey = "remapWhenActive"},
     {stateKey = "fadeCamera", valueKey = "fadeCameraWhenActive"},
     {stateKey = "pawnArmBones", valueKey = "pawnArmBonesWhenActive"},
-    {stateKey = "controllerMouse", valueKey = "controllerMouseWhenActive"}
+    {stateKey = "controllerMouse", valueKey = "controllerMouseWhenActive"},
+    {stateKey = "motionSicknessCompensation", valueKey = "motionSicknessCompensationWhenActive"}
 }
 
 local stateConfigGame = {
@@ -39,7 +40,8 @@ local stateConfigGame = {
     {stateKey = "remapEnabled", valueKey = "remapWhenInGameState"},
     {stateKey = "fadeCamera", valueKey = "fadeCameraWhenInGameState"},
     {stateKey = "pawnArmBones", valueKey = "pawnArmBonesWhenInGameState"},
-    {stateKey = "controllerMouse", valueKey = "controllerMouseWhenInGameState"}
+    {stateKey = "controllerMouse", valueKey = "controllerMouseWhenInGameState"},
+    {stateKey = "motionSicknessCompensation", valueKey = "motionSicknessCompensationWhenInGameState"}
 }
 
 local gameStates = {"cutscene", "paused", "character_hidden"}
@@ -238,6 +240,22 @@ local function getConfigWidgets()
                 widgetType = "input_text",
                 id = widgetPrefix .. "controllerMouseWhenInGameStatePriority",
                 label = " Controller Mouse",
+                initialValue = "0",
+                width = 35,
+            },
+            {
+                widgetType = "combo",
+                id = widgetPrefix .. "motionSicknessCompensationWhenInGameState",
+                label = "",
+                selections = {"No effect", "Enable", "Disable"},
+                initialValue = 1,
+                width = 150,
+            },
+		    { widgetType = "same_line" },
+            {
+                widgetType = "input_text",
+                id = widgetPrefix .. "motionSicknessCompensationWhenInGameStatePriority",
+                label = " Motion Sickness Compensation",
                 initialValue = "0",
                 width = 35,
             },
@@ -477,6 +495,22 @@ local function getConfigWidgets()
                 widgetType = "input_text",
                 id = widgetPrefix .. "controllerMouseWhenActivePriority",
                 label = " Controller Mouse",
+                initialValue = "0",
+                width = 35,
+            },
+            {
+                widgetType = "combo",
+                id = widgetPrefix .. "motionSicknessCompensationWhenActive",
+                label = "",
+                selections = {"No effect", "Enable", "Disable"},
+                initialValue = 1,
+                width = 150,
+            },
+		    { widgetType = "same_line" },
+            {
+                widgetType = "input_text",
+                id = widgetPrefix .. "motionSicknessCompensationWhenActivePriority",
+                label = " Motion Sickness Compensation",
                 initialValue = "0",
                 width = 35,
             },
